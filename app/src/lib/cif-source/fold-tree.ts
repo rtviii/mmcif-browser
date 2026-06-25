@@ -1,16 +1,16 @@
 // Build the fold-region tree from the segmented document + Mol*'s parsed fields.
 //
-// Only LOOP spans fold (key-value categories are short and render verbatim). A loop whose
-// category has a bespoke handler AND is one-physical-line-per-row gets a semantic tree
-// (atom_site: chain > residue; a few others: a single grouping level). Everything else
-// gets one generic node over its data body. Fold node line ranges are the source lines
-// hidden when the node collapses; row indices are kept for the future 3D linkage.
+// Every category (loop or key-value) becomes a collapsible "category" node spanning all its
+// lines, so any category can collapse to a one-line summary. atom_site gets chain > residue
+// children (residues lazily on expand); a few categories get one grouping level. Fold node
+// line ranges are the source lines hidden when the node collapses; row indices are kept for
+// the 3D linkage.
 
 import type { CifDocument, LoopSpan } from "./segment";
 import { type MolCifCategory, type MolCifFile } from "./types";
 
 export type HierarchyMode = "auth" | "label";
-export type FoldLevel = "loop" | "chain" | "residue" | "group";
+export type FoldLevel = "category" | "chain" | "residue" | "group";
 
 export interface FoldNode {
   id: string;
@@ -35,7 +35,7 @@ export interface FoldCtx {
 
 export interface FoldTree {
   mode: HierarchyMode;
-  roots: FoldNode[]; // top-level nodes, in source order (sorted by startLine)
+  roots: FoldNode[]; // category nodes, in source order
   byId: Map<string, FoldNode>;
   ctx: FoldCtx;
 }
@@ -44,31 +44,17 @@ function fmt(n: number): string {
   return n.toLocaleString("en-US");
 }
 
-/** Resolve a grouping field name to the auth_/label_ variant for the active mode. */
+/** Resolve a grouping field to the auth_/label_ variant for the active mode. */
 function pick(cat: MolCifCategory, mode: HierarchyMode, auth: string, label: string) {
   const primary = mode === "auth" ? auth : label;
   return cat.getField(primary) ?? cat.getField(label) ?? cat.getField(auth);
-}
-
-/** One generic node covering a loop's whole data body. */
-function genericNode(span: LoopSpan, rowCount: number): FoldNode {
-  return {
-    id: `loop:${span.block}:${span.category}`,
-    label: `${span.category} · ${fmt(rowCount)} rows`,
-    category: span.category,
-    level: "loop",
-    startLine: span.dataStart,
-    endLine: span.dataEnd,
-    rowStart: 0,
-    rowEnd: Math.max(0, rowCount - 1),
-  };
 }
 
 /** atom_site: contiguous runs of the chain id -> chain nodes (residues filled lazily). */
 function atomSiteNodes(span: LoopSpan, cat: MolCifCategory, mode: HierarchyMode): FoldNode[] {
   const asymF = pick(cat, mode, "auth_asym_id", "label_asym_id");
   const n = span.dataLineCount;
-  if (!asymF || n === 0) return [genericNode(span, cat.rowCount)];
+  if (!asymF || n === 0) return [];
   const asym = asymF.toStringArray({ start: 0, end: n });
   const nodes: FoldNode[] = [];
   let i = 0;
@@ -117,12 +103,7 @@ export function ensureChildren(tree: FoldTree, node: FoldNode): void {
   let i = 0;
   while (i < m) {
     let j = i + 1;
-    while (
-      j < m &&
-      (!seq || seq[j] === seq[i]) &&
-      (!ins || ins[j] === ins[i])
-    )
-      j++;
+    while (j < m && (!seq || seq[j] === seq[i]) && (!ins || ins[j] === ins[i])) j++;
     const label = `${node.key ?? ""} ${comp ? comp[i] : ""} ${seq ? seq[i] : i}`.trim();
     const res: FoldNode = {
       id: `${node.id}:r:${i}`,
@@ -149,7 +130,7 @@ function groupBy(auth: string, label: string, prefix: string): Handler {
   return (span, cat, mode) => {
     const f = pick(cat, mode, auth, label);
     const n = span.dataLineCount;
-    if (!f || n === 0) return [genericNode(span, cat.rowCount)];
+    if (!f || n === 0) return [];
     const arr = f.toStringArray({ start: 0, end: n });
     const nodes: FoldNode[] = [];
     let i = 0;
@@ -179,25 +160,64 @@ const HANDLERS: Record<string, Handler> = {
   struct_sheet_range: groupBy("beg_auth_asym_id", "beg_label_asym_id", "chain"),
 };
 
-export function buildFoldTree(
-  doc: CifDocument,
-  file: MolCifFile,
-  mode: HierarchyMode,
-): FoldTree {
-  const roots: FoldNode[] = [];
-  for (const span of doc.spans) {
-    if (span.kind !== "loop" || span.dataStart < 0 || span.dataLineCount === 0) continue;
-    const cat = file.blocks[span.block]?.categories[span.category];
-    const rowCount = cat?.rowCount ?? span.dataLineCount;
-    const oneLinePerRow = !!cat && span.dataLineCount === rowCount;
-    const handler = HANDLERS[span.category];
-    if (handler && oneLinePerRow && cat) {
-      roots.push(...handler(span, cat, mode));
-    } else {
-      roots.push(genericNode(span, rowCount));
-    }
+// Bookkeeping categories that don't concern the structure itself. Prefix match:
+// a category matches if it equals an entry or starts with "<entry>_". Heuristic; tune freely.
+const PREAMBLE_PREFIXES = [
+  "audit", "citation", "software", "computing", "database", "pdbx_database",
+  "pdbx_audit", "pdbx_version", "struct_keywords", "diffrn", "exptl", "reflns",
+  "refine", "pdbx_refine", "pdbx_nmr", "phasing", "pdbx_validate", "em",
+  "pdbx_initial", "pdbx_data_processing", "pdbx_serial",
+];
+
+export function isPreamble(category: string): boolean {
+  return PREAMBLE_PREFIXES.some((p) => category === p || category.startsWith(p + "_"));
+}
+
+function categoryNode(span: CifDocument["spans"][number], file: MolCifFile, mode: HierarchyMode): FoldNode {
+  if (span.kind === "kv") {
+    const items = Object.keys(span.itemLines).length;
+    return {
+      id: `cat:${span.block}:${span.category}`,
+      label: `${span.category} · ${items} item${items === 1 ? "" : "s"}`,
+      category: span.category,
+      level: "category",
+      startLine: span.start,
+      endLine: span.end,
+      rowStart: 0,
+      rowEnd: 0,
+    };
   }
+  const cat = file.blocks[span.block]?.categories[span.category];
+  const rowCount = cat?.rowCount ?? span.dataLineCount;
+  const lastDecl = span.declLines.length ? span.declLines[span.declLines.length - 1] : span.loopKeywordLine;
+  const node: FoldNode = {
+    id: `cat:${span.block}:${span.category}`,
+    label: `${span.category} · ${fmt(rowCount)} row${rowCount === 1 ? "" : "s"}`,
+    category: span.category,
+    level: "category",
+    startLine: span.loopKeywordLine,
+    endLine: span.dataEnd >= 0 ? span.dataEnd : lastDecl,
+    rowStart: 0,
+    rowEnd: Math.max(0, rowCount - 1),
+    block: span.block,
+  };
+  const oneLinePerRow = !!cat && span.dataStart >= 0 && span.dataLineCount === rowCount;
+  const handler = HANDLERS[span.category];
+  if (handler && oneLinePerRow && cat) {
+    const children = handler(span, cat, mode);
+    if (children.length) node.children = children;
+  }
+  return node;
+}
+
+export function buildFoldTree(doc: CifDocument, file: MolCifFile, mode: HierarchyMode): FoldTree {
+  const roots: FoldNode[] = [];
+  for (const span of doc.spans) roots.push(categoryNode(span, file, mode));
   const byId = new Map<string, FoldNode>();
-  for (const r of roots) byId.set(r.id, r);
+  const add = (n: FoldNode) => {
+    byId.set(n.id, n);
+    if (n.children) for (const c of n.children) add(c);
+  };
+  for (const r of roots) add(r);
   return { mode, roots, byId, ctx: { doc, file, mode } };
 }

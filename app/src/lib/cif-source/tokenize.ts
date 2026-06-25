@@ -53,6 +53,39 @@ function classify(word: string): Token {
   return t;
 }
 
+// Split a single CIF data line into its values (quote-aware), outer quotes stripped.
+// Used by the table view to map a loop's data row onto column cells.
+export function splitValues(text: string): string[] {
+  const out: string[] = [];
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    const ch = text[i];
+    if (ch === " " || ch === "\t") {
+      i++;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      let j = i + 1;
+      while (j < n) {
+        if (text[j] === ch && (j + 1 >= n || text[j + 1] === " " || text[j + 1] === "\t")) {
+          j++;
+          break;
+        }
+        j++;
+      }
+      out.push(text.slice(i + 1, j - 1));
+      i = j;
+    } else {
+      let j = i + 1;
+      while (j < n && text[j] !== " " && text[j] !== "\t") j++;
+      out.push(text.slice(i, j));
+      i = j;
+    }
+  }
+  return out;
+}
+
 export function tokenizeLine(text: string, ctx?: TokenizeCtx): Token[] {
   // Inside a multiline text field (or the ;-delimiter lines themselves), the whole
   // line is string content.

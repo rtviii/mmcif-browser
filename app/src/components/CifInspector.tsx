@@ -2,6 +2,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { type ParsedCif, parseCif } from "@/lib/cif";
+import type { MolstarViewer as MolstarViewerInstance } from "@/lib/molstar/viewer";
 import { useStore } from "@/lib/store";
 import SourceInspector from "./cif/SourceInspector";
 
@@ -26,6 +27,7 @@ export default function CifInspector() {
   const [loading, setLoading] = useState(false);
   const [pdbId, setPdbId] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [viewer, setViewer] = useState<MolstarViewerInstance | null>(null);
 
   useEffect(() => {
     if (!file) return;
@@ -149,12 +151,12 @@ export default function CifInspector() {
               or open one / fetch a PDB ID above.
             </div>
           ) : (
-            <SourceInspector file={file} parsed={parsed} />
+            <SourceInspector file={file} parsed={parsed} viewer={viewer} />
           )}
         </div>
 
         <div className="min-w-0 flex-1 bg-black">
-          <MolstarViewer data={file?.data ?? null} binary={file?.binary ?? false} />
+          <MolstarViewer data={file?.data ?? null} binary={file?.binary ?? false} onReady={setViewer} />
         </div>
       </div>
     </div>

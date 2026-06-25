@@ -30,41 +30,51 @@ Mol* 5.x.
   `useMolstarViewer` (StrictMode-safe deferred dispose), thin `MolstarViewer.tsx` (lazy, ssr:false).
 - Exposes the highlight/focus/hover/click primitives the inspector's 3D linkage will use.
 
-### Inspector v0 (`/inspector`) — STOPGAP, to be reworked
-Current state: load mmCIF/BinaryCIF (file or PDB id) → a tree of CATEGORIES whose rows are each
-category's COLUMNS with one sample value + dictionary intellisense on hover, plus a Mol* 3D view.
-This is not the intended design (see below). Reusable parts: the file load + `CIF.parseText/
-parseBinary` parsing (`src/lib/cif.ts`), the dictionary join for intellisense, and the 3D viewer.
+### Inspector — folded, linted source view (Phase 1, done)
+`/inspector` renders the VERBATIM file text, syntax-highlighted, with fold regions computed by
+parsing (the displayed bytes are the real file; parsing only decides what's collapsible). Built as
+four pure modules (`src/lib/cif-source/{segment,tokenize,fold-tree,flatten}.ts`) feeding a virtualized
+renderer (`src/components/cif/{SourceView,SourceInspector,Definition}.tsx`), with `CifInspector`
+keeping the toolbar / file-load / block-select / Mol* panel.
+- `atom_site` folds by chain > residue (residues computed lazily on chain expand); a few more
+  categories fold by one grouping level (`entity_poly_seq`, `struct_conf`, `struct_sheet_range`).
+  Every other category collapses at the category level.
+- `auth_*` / `label_*` toggle recomputes only the fold grouping; the rendered text never changes.
+- Dictionary hover-definition kept (hovering an `_cat.item` token). Virtualized via
+  `@tanstack/react-virtual`; verified smooth on ~58k-atom structures (1aon).
+- `.bcif` shows a notice (needs text mmCIF); the 3D panel still loads.
+
+### Inspector Phase 2 — 3D linkage (source → Mol*, done)
+Hovering a structural source row (atom line, residue/chain placeholder, or chain/residue fold rail)
+highlights the matching element in the Mol* view; clicking an atom row focuses the camera on its
+residue. Maps `atom_site` rows to `auth_asym_id` / `auth_seq_id` read directly (so it works in both
+auth and label modes) → `buildResidueQuery`/`buildChainQuery` → `executeQuery` →
+`highlightLoci`/`focusLoci`. The `MolstarViewer` handle is surfaced via `onReady`. Ligands are covered
+by the atom_site residue path.
+
+### Inspector Phase 3 — quality-of-life view options (done)
+The raw on-disk view is the default; these are toggles in the source-view header:
+- Hierarchy rail gutter: text shifts right of a fold rail showing category > chain > residue nesting;
+  any level collapses from any line, and hovering a rail highlights that chain/residue in 3D.
+- Hide noise (`loop_` / `#` / blank lines) and Collapse preamble (bookkeeping categories) toggles;
+  every category collapses to a one-line summary.
+- Table view: loop categories render as column-aligned tables (tiny category name + column-name
+  header row + value cells; widths sampled from the first rows; long values truncate with click-to-
+  expand). atom_site keeps its chain/residue rails, so you get the table AND the hierarchy. Key-value
+  categories stay verbatim (they already read fine).
 
 ## Next
 
-### Inspector rework — "linted source view with structural folding" (the actual goal)
-See the file's real content, navigated like code in an editor — not a plaintext dump and not a
-column summary.
-
-Phase 1 — structural folding:
-- Render the CIF content syntax-highlighted / "linted" (categories, items, loops, values).
-- Collapsible blocks by SEMANTIC hierarchy. For coordinate loops (`atom_site`): fold by the
-  biological nesting — chain > residue > atoms (collapse all atoms of a residue, all residues of a
-  chain, …). Other categories: fold at the category / loop / row level.
-- Editor-like: expand/collapse, jump around; stays usable on huge files (virtualized rendering).
-- Keep the v0 dictionary join: hovering an item/column still surfaces its dictionary definition.
-
-Phase 2 — 3D linkage:
-- Identify which categories/items have a spatial mapping (atom_site rows, residues, chains, ligands,
-  secondary-structure ranges, assemblies, …).
-- Wire interaction both ways: hover/select a row (atom / residue / chain) → highlight it in the Mol*
-  view (foundation already supports this: `executeQuery` → `highlightLoci`/`focusLoci`); and 3D
-  hover/click → scroll/highlight the corresponding row in the source view.
-
-Open design questions (resolve when we start):
-- Source-faithful text with fold regions (CodeMirror-style) vs a structured re-render of the parsed
-  data styled to look like source. The chain>residue>atom fold needs parsed grouping, so likely a
-  structured re-render rather than literal text folding.
-- Hierarchy keys: `auth_*` (what users cite) vs `label_*` (canonical) — probably offer both.
-- Which categories get bespoke hierarchical folds beyond `atom_site` (e.g. `entity_poly_seq`,
-  `struct_conf`/secondary structure, `pdbx_struct_assembly`).
-- Performance: `atom_site` can be millions of rows → virtualization is mandatory.
+Open / deferred:
+- Reverse 3D linkage: 3D hover/click → scroll + highlight the source row (use each fold node's
+  `rowStart`/`rowEnd`).
+- Label-mode chain queries when a label chain spans multiple auth chains (auth mode is exact).
+- Table view refinements: key-value categories as a two-column table; `;`-multiline loop values
+  (currently fall back to verbatim for that row); aligning across the whole loop (widths are sampled
+  from the first ~40 rows).
+- `.bcif` generated-text fallback (clearly marked synthetic) so the source view works for binary.
+- Value-vs-dictionary validation (flag values violating an item's type regex / enum).
+- The "preamble" classifier is a heuristic prefix list in `fold-tree.ts` — tune as needed.
 
 ## Backlog (unscheduled)
 
