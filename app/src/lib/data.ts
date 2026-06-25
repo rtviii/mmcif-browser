@@ -17,6 +17,6 @@ export function hashHue(s: string): number {
 }
 
 export function groupColor(group: string | undefined): string {
-  if (!group) return "hsl(220 8% 55%)";
-  return `hsl(${hashHue(group)} 60% 55%)`;
+  if (!group) return "hsl(220 6% 50%)";
+  return `hsl(${hashHue(group)} 38% 58%)`;
 }

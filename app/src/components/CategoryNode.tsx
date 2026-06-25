@@ -24,28 +24,25 @@ export default function CategoryNode({ id, data, selected }: NodeProps) {
 
   return (
     <div
-      className={`group relative w-[190px] rounded-md border bg-neutral-900 px-3 py-2 shadow-sm transition
-        ${selected ? "border-sky-400 ring-2 ring-sky-400/40" : d.hovered ? "border-neutral-500" : "border-neutral-700"}`}
-      style={{ borderLeftColor: accent, borderLeftWidth: 4 }}
+      className={`group relative flex h-[38px] w-[168px] items-center rounded border bg-neutral-900 pl-2 pr-1.5 transition-colors
+        ${selected ? "border-neutral-300" : d.hovered ? "border-neutral-500" : "border-neutral-700/80"}`}
+      style={{ borderLeftColor: accent, borderLeftWidth: 3 }}
     >
-      <Handle type="target" position={targetPos} className="!h-2 !w-2 !border-0 !bg-neutral-500" />
-      <Handle type="source" position={sourcePos} className="!h-2 !w-2 !border-0 !bg-neutral-500" />
+      <Handle type="target" position={targetPos} className="!h-1.5 !w-1.5 !border-0 !bg-neutral-600" />
+      <Handle type="source" position={sourcePos} className="!h-1.5 !w-1.5 !border-0 !bg-neutral-600" />
 
-      <div className="truncate font-mono text-[13px] font-medium text-neutral-100" title={d.label}>
-        {d.label}
-      </div>
-      <div className="mt-0.5 flex items-center gap-2 text-[10px] text-neutral-400">
-        <span>{d.numItems} items</span>
-        {d.numKeys > 0 && (
-          <span className="rounded bg-amber-500/15 px-1 text-amber-300" title={`${d.numKeys} key item(s)`}>
-            key
-          </span>
-        )}
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-mono text-[12px] leading-tight text-neutral-100" title={d.label}>
+          {d.label}
+        </div>
+        <div className="text-[9px] leading-tight text-neutral-500">
+          {d.numItems} items{d.numKeys > 0 ? " · key" : ""}
+        </div>
       </div>
 
-      <div className="absolute right-1 top-1 hidden gap-1 group-hover:flex">
+      <div className="ml-1 hidden shrink-0 flex-col gap-0.5 group-hover:flex">
         <button
-          className="rounded bg-neutral-800 px-1 text-[10px] text-neutral-300 hover:bg-neutral-700"
+          className="rounded px-1 text-[9px] leading-none text-neutral-400 hover:bg-neutral-700 hover:text-neutral-100"
           title="Expand neighbours"
           onClick={(e) => {
             e.stopPropagation();
@@ -55,7 +52,7 @@ export default function CategoryNode({ id, data, selected }: NodeProps) {
           ＋
         </button>
         <button
-          className="rounded bg-neutral-800 px-1 text-[10px] text-neutral-300 hover:bg-neutral-700"
+          className="rounded px-1 text-[9px] leading-none text-neutral-400 hover:bg-neutral-700 hover:text-neutral-100"
           title="Hide"
           onClick={(e) => {
             e.stopPropagation();

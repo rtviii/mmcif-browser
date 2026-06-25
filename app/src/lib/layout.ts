@@ -1,8 +1,8 @@
 import dagre from "@dagrejs/dagre";
 import type { Edge, Node } from "@xyflow/react";
 
-const NODE_W = 190;
-const NODE_H = 52;
+const NODE_W = 168;
+const NODE_H = 38;
 
 // Lay out the currently-visible nodes/edges with dagre. Recomputed whenever the
 // visible set changes; keeps the explorer readable as categories are expanded.
@@ -93,7 +93,7 @@ export function layoutRadial(nodes: Node[], edges: Edge[], centerId?: string): N
       pos.set(arr[0], { x: 0, y: 0 });
       continue;
     }
-    const radius = Math.max(320 * d, (arr.length * 230) / (2 * Math.PI));
+    const radius = Math.max(300 * d, (arr.length * 200) / (2 * Math.PI));
     arr.forEach((id, i) => {
       const a = (i / arr.length) * 2 * Math.PI - Math.PI / 2;
       pos.set(id, { x: Math.cos(a) * radius, y: Math.sin(a) * radius });

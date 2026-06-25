@@ -34,6 +34,7 @@ interface State {
   show: (id: string) => void;
   hide: (id: string) => void;
   expand: (id: string) => void; // add a category's in+out neighbours
+  expandOut: (id: string) => void; // add only what this category references
   focus: (id: string) => void; // select + reveal a single category (clears canvas)
   clear: () => void;
   setSelected: (id: string | null) => void;
@@ -88,9 +89,10 @@ export const useStore = create<State>((set, get) => ({
     search.addAll(docs);
 
     set({ loaded: true, dict, graph, nodeIndex, adj, search });
-    // seed the canvas with a useful starting category + its neighbourhood
+    // seed with a useful starter: atom_site + the categories it references (out-links only,
+    // ~13 — compact). Full in+out expansion stays an explicit user action.
     get().focus("atom_site");
-    get().expand("atom_site");
+    get().expandOut("atom_site");
   },
 
   neighbors: (id) => {
@@ -117,6 +119,16 @@ export const useStore = create<State>((set, get) => ({
       const vis = new Set(s.visible);
       vis.add(id);
       ns.forEach((n) => vis.add(n));
+      return { visible: [...vis] };
+    });
+  },
+
+  expandOut: (id) => {
+    const targets = (get().adj.out.get(id) ?? []).map((e) => e.target);
+    set((s) => {
+      const vis = new Set(s.visible);
+      vis.add(id);
+      targets.forEach((n) => vis.add(n));
       return { visible: [...vis] };
     });
   },

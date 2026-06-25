@@ -34,11 +34,10 @@ function Canvas() {
   const expand = useStore((s) => s.expand);
   const { fitView } = useReactFlow();
 
-  // build + lay out the visible subgraph
-  const { nodes, edges } = useMemo(() => {
-    if (!graph) return { nodes: [] as Node[], edges: [] as Edge[] };
-    const vis = new Set(visible);
-    const ns: Node[] = visible
+  // 1) positions: recomputed ONLY when the visible set / center changes (never on hover)
+  const positioned = useMemo<Node[]>(() => {
+    if (!graph) return [];
+    const base: Node[] = visible
       .filter((id) => nodeIndex.has(id))
       .map((id) => {
         const gn = nodeIndex.get(id)!;
@@ -52,49 +51,89 @@ function Canvas() {
             numKeys: gn.numKeys,
             groups: gn.groups,
             dir: layoutDir,
-            hovered: hovered === id,
+            hovered: false,
           },
         } satisfies Node;
       });
+    const es = graph.edges
+      .filter((e) => !e.self && visible.includes(e.source) && visible.includes(e.target))
+      .map((e) => ({ id: e.id, source: e.source, target: e.target }));
+    return layoutRadial(base, es as Edge[], center ?? undefined);
+  }, [graph, nodeIndex, visible, center, layoutDir]);
 
+  // 2) per-node selection/hover flags applied without re-laying-out
+  const nodes = useMemo<Node[]>(
+    () =>
+      positioned.map((n) => ({
+        ...n,
+        selected: selected === n.id,
+        data: { ...n.data, hovered: hovered === n.id },
+      })),
+    [positioned, selected, hovered],
+  );
+
+  // 3) edges: static (no animation), calm neutral palette, subtle highlight on active node
+  const edges = useMemo<Edge[]>(() => {
+    if (!graph) return [];
+    const vis = new Set(visible);
     const active = hovered ?? selected;
-    const es: Edge[] = graph.edges
+    return graph.edges
       .filter((e) => !e.self && vis.has(e.source) && vis.has(e.target))
       .map((e) => {
         const incident = active === e.source || active === e.target;
-        const onHover = hovered != null && (hovered === e.source || hovered === e.target);
         return {
           id: e.id,
           source: e.source,
           target: e.target,
           label: e.count > 1 ? String(e.count) : undefined,
-          animated: onHover,
-          markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
+          markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: incident ? "#94a3b8" : "#3f3f46" },
           style: {
-            stroke: incident ? "#38bdf8" : "#3f3f46",
-            strokeWidth: incident ? 1.8 : 1,
-            opacity: active && !incident ? 0.15 : 1,
+            stroke: incident ? "#94a3b8" : "#3f3f46",
+            strokeWidth: incident ? 1.4 : 1,
+            opacity: active && !incident ? 0.1 : 1,
           },
-          labelStyle: { fill: "#a1a1aa", fontSize: 10 },
-          labelBgStyle: { fill: "#18181b" },
+          labelStyle: { fill: "#71717a", fontSize: 9 },
+          labelBgStyle: { fill: "#0a0a0a", fillOpacity: 0.8 },
         } satisfies Edge;
       });
+  }, [graph, visible, hovered, selected]);
 
-    return { nodes: layoutRadial(ns, es, center ?? undefined), edges: es };
-  }, [graph, nodeIndex, visible, center, selected, hovered, layoutDir]);
-
-  // refit once React Flow has measured the nodes (and whenever the set changes)
   const count = visible.length;
   const nodesInitialized = useNodesInitialized();
   useEffect(() => {
     if (!nodesInitialized) return;
-    const t = setTimeout(() => fitView({ duration: 300, padding: 0.18 }), 0);
-    return () => clearTimeout(t);
+    // double rAF so the pane has its final measured size before fitting
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => fitView({ duration: 200, padding: 0.2 }));
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
   }, [nodesInitialized, count, center, fitView]);
+
+  // re-fit when the canvas itself resizes (window/sidebar) so the graph stays centred
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => fitView({ padding: 0.18 }));
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      cancelAnimationFrame(raf);
+    };
+  }, [fitView]);
 
   if (!dict) return null;
 
   return (
+    <div ref={wrapperRef} className="h-full w-full">
     <ReactFlow
       nodes={nodes}
       edges={edges}
@@ -108,16 +147,17 @@ function Canvas() {
       proOptions={{ hideAttribution: true }}
       fitView
     >
-      <Background color="#27272a" gap={20} />
-      <Controls className="!bg-neutral-800 !text-neutral-200" />
+      <Background color="#262626" gap={22} size={1} />
+      <Controls showInteractive={false} className="!shadow-none" />
       <MiniMap
         pannable
-        zoomable
-        className="!bg-neutral-900"
+        className="!bg-neutral-900/80 !border !border-neutral-800"
         nodeColor="#3f3f46"
-        maskColor="rgba(0,0,0,0.6)"
+        nodeStrokeWidth={0}
+        maskColor="rgba(0,0,0,0.55)"
       />
     </ReactFlow>
+    </div>
   );
 }
 
@@ -138,19 +178,17 @@ export default function GraphExplorer() {
     <div className="flex h-full w-full">
       <div className="relative flex-1">
         {!loaded && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-neutral-400">
+          <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-neutral-500">
             Loading dictionary…
           </div>
         )}
         <ReactFlowProvider>
           <Canvas />
-          <div className="pointer-events-none absolute left-3 top-3 z-20 w-80">
-            <div className="pointer-events-auto">
-              <SearchBar />
-            </div>
+          <div className="absolute left-3 top-3 z-20 w-72">
+            <SearchBar />
           </div>
           {dict && (
-            <div className="absolute bottom-3 left-3 z-20 rounded bg-neutral-900/80 px-2 py-1 font-mono text-[10px] text-neutral-400">
+            <div className="absolute bottom-2 left-2 z-20 font-mono text-[10px] text-neutral-600">
               {dict.meta.title} v{dict.meta.version} · {dict.meta.num_categories} categories ·{" "}
               {dict.meta.num_items} items
             </div>
