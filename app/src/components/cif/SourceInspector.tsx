@@ -10,10 +10,18 @@ import {
   isPreamble,
 } from "@/lib/cif-source/fold-tree";
 import { segmentDocument } from "@/lib/cif-source/segment";
-import { buildLoopTable, type LoopTable } from "@/lib/cif-source/table";
-import { asMolCifFile } from "@/lib/cif-source/types";
+import { buildLineToRow, buildLoopTable, type LoopTable } from "@/lib/cif-source/table";
+import { asMolCifFile, type MolCifCategory } from "@/lib/cif-source/types";
 import type { MolstarViewer } from "@/lib/molstar/viewer";
-import { buildAtomQuery, buildChainQuery, buildResidueQuery, executeQuery } from "@/lib/molstar/queries";
+import {
+  buildAtomQuery,
+  buildBondQuery,
+  buildChainQuery,
+  buildComponentQuery,
+  buildEntityQuery,
+  buildResidueQuery,
+  executeQuery,
+} from "@/lib/molstar/queries";
 import { Definition, type HoverTarget } from "./Definition";
 import SourceView, { type ViewOptions } from "./SourceView";
 
@@ -82,6 +90,21 @@ export default function SourceInspector({
     });
     return m;
   }, [doc, parsed, tableMode]);
+
+  // Per-loop line -> parsed row index, for the non-atom_site categories the 3D interaction
+  // resolver targets (atom_site uses a direct offset and is excluded to avoid 58k-entry maps).
+  const rowMaps = useMemo(() => {
+    const m = new Map<number, Map<number, number>>();
+    if (!doc || !parsed) return m;
+    const file = asMolCifFile(parsed.raw);
+    doc.spans.forEach((span, si) => {
+      if (span.kind !== "loop" || span.category === "atom_site" || span.dataStart < 0) return;
+      const cat = file.blocks[span.block]?.categories[span.category];
+      if (!cat) return;
+      m.set(si, buildLineToRow(doc, span, cat.rowCount));
+    });
+    return m;
+  }, [doc, parsed]);
 
   const hiddenLines = useMemo(() => {
     if ((!hideNoise && !tableMode) || !doc) return undefined;
@@ -232,13 +255,65 @@ export default function SourceInspector({
     return atomFor(span.block, row);
   };
 
-  const residueForLine = (lineIndex: number): { chain: string; seq: number } | null => {
-    if (!doc) return null;
-    const span = doc.spans[doc.lineToSpan[lineIndex]];
-    if (!span || span.kind !== "loop" || span.category !== "atom_site" || span.dataStart < 0) return null;
-    const row = lineIndex - span.dataStart;
-    if (row < 0 || row >= span.dataLineCount) return null;
-    return authFor(span.block, row);
+  const fstr = (cat: MolCifCategory, name: string, row: number): string => {
+    const f = cat.getField(name);
+    return f ? f.str(row) : "";
+  };
+  const fint = (cat: MolCifCategory, name: string, row: number): number | null => {
+    const f = cat.getField(name);
+    return f ? f.int(row) : null;
+  };
+
+  // Map a (non-atom_site) category row to a 3D query: entity rows highlight all instances of
+  // the entity; struct_conf / struct_sheet_range highlight the secondary-structure residue
+  // range; struct_conn highlights both bond partners; chem_comp highlights every instance of
+  // the component. Returns null for rows / categories we don't map (yet).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const queryForLine = (lineIndex: number): any | null => {
+    if (!doc || !parsed) return null;
+    const si = doc.lineToSpan[lineIndex];
+    if (si < 0) return null;
+    const span = doc.spans[si];
+    if (span.kind !== "loop" || span.category === "atom_site") return null;
+    const row = rowMaps.get(si)?.get(lineIndex);
+    if (row === undefined) return null;
+    const cat = asMolCifFile(parsed.raw).blocks[span.block]?.categories[span.category];
+    if (!cat) return null;
+
+    switch (span.category) {
+      case "entity": {
+        const id = fstr(cat, "id", row);
+        return id ? buildEntityQuery(id) : null;
+      }
+      case "entity_poly":
+      case "entity_poly_seq":
+      case "pdbx_entity_nonpoly": {
+        const eid = fstr(cat, "entity_id", row);
+        return eid ? buildEntityQuery(eid) : null;
+      }
+      case "struct_conf":
+      case "struct_sheet_range": {
+        const chain = fstr(cat, "beg_auth_asym_id", row);
+        const beg = fint(cat, "beg_auth_seq_id", row);
+        const end = fint(cat, "end_auth_seq_id", row);
+        if (!chain || beg == null) return null;
+        return buildResidueQuery(chain, beg, end ?? undefined);
+      }
+      case "struct_conn": {
+        const c1 = fstr(cat, "ptnr1_auth_asym_id", row);
+        const s1 = fint(cat, "ptnr1_auth_seq_id", row);
+        const c2 = fstr(cat, "ptnr2_auth_asym_id", row);
+        const s2 = fint(cat, "ptnr2_auth_seq_id", row);
+        if (!c1 || s1 == null) return null;
+        return c2 && s2 != null ? buildBondQuery(c1, s1, c2, s2) : buildResidueQuery(c1, s1);
+      }
+      case "chem_comp": {
+        const id = fstr(cat, "id", row);
+        return id ? buildComponentQuery(id) : null;
+      }
+      default:
+        return null;
+    }
   };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -260,12 +335,14 @@ export default function SourceInspector({
   const onRowEnter = (lineIndex: number) =>
     throttle(() => {
       const a = atomForLine(lineIndex);
-      if (a && a.atom) {
-        show(buildAtomQuery(a.chain, a.seq, a.atom, a.alt || undefined), false);
+      if (a) {
+        show(
+          a.atom ? buildAtomQuery(a.chain, a.seq, a.atom, a.alt || undefined) : buildResidueQuery(a.chain, a.seq),
+          false,
+        );
         return;
       }
-      const r = residueForLine(lineIndex);
-      show(r ? buildResidueQuery(r.chain, r.seq) : null, false);
+      show(queryForLine(lineIndex), false);
     });
 
   const onNodeEnter = (node: FoldNode) =>
@@ -292,12 +369,15 @@ export default function SourceInspector({
 
   const onRowClick = (lineIndex: number) => {
     const a = atomForLine(lineIndex);
-    if (a && a.atom) {
-      show(buildAtomQuery(a.chain, a.seq, a.atom, a.alt || undefined), true);
+    if (a) {
+      show(
+        a.atom ? buildAtomQuery(a.chain, a.seq, a.atom, a.alt || undefined) : buildResidueQuery(a.chain, a.seq),
+        true,
+      );
       return;
     }
-    const r = residueForLine(lineIndex);
-    if (r) show(buildResidueQuery(r.chain, r.seq), true);
+    const q = queryForLine(lineIndex);
+    if (q) show(q, true);
   };
 
   const viewOptions: ViewOptions = { hideNoise, collapsePreamble, tableMode };

@@ -65,6 +65,11 @@ the baseline is solid, so branch freely before starting the next batch.
     (`CifInspector.tsx`, resizes the Mol* canvas live via `handleResize`); a "go to category" search
     box with native autosuggest that scrolls the virtual list (`SourceView.tsx`); and "Expand all"
     reworked into a single Expand all ↔ Collapse all toggle (`SourceInspector.onToggleExpandAll`).
+  - Category → 3D interaction map v1 (same branch): hover/click a non-atom_site data row to highlight/
+    focus the relevant loci. `SourceInspector.queryForLine` switches on category — entity* →
+    `buildEntityQuery`, struct_conf/struct_sheet_range → residue range, struct_conn →
+    `buildBondQuery` (both partners), chem_comp → `buildComponentQuery` (all instances). Row index via
+    `buildLineToRow` (`cif-source/table.ts`). Deferred: struct_site, assemblies, struct_asym, unit cell.
 
 ## Where things live (app/src)
 
@@ -81,14 +86,17 @@ the baseline is solid, so branch freely before starting the next batch.
 - `lib/molstar/{viewer,spec,queries}.ts`, `hooks/useMolstarViewer.ts`, `components/MolstarViewer.tsx`
   — Mol* foundation (adapted from `~/dev/fend_tubulinxyz`, no tubulin specifics).
 
-## Immediate next task — feedback batch (2026-06-25)
+## Next task
 
-The full prioritized list (with root-cause diagnoses) is in memory: see `inspector-next-work.md`
-and `mol-viewer-style-pref.md`. The file-viewer batch, the Mol* default look, AND the UI/UX batch
-are DONE (branch `inspector-file-viewer`); the one remaining item:
+The whole 2026-06-25 feedback batch (file-viewer, Mol* look, UI/UX, interaction map v1) is DONE on
+branch `inspector-file-viewer` — see `inspector-next-work.md` + `mol-viewer-style-pref.md` for detail.
+Branch not yet merged to `main`. Remaining polish, when wanted:
 
-- Brainstorm + build a category/item → 3D interaction map (entities via `buildEntityQuery`, bonds via
-  `struct_conn`, secondary structure, assemblies, ligands, sites, unit cell). See the memory file.
+- Extend the interaction map to the deferred categories: `struct_site`/`struct_site_gen` (binding-site
+  residues), `pdbx_struct_assembly`(`_gen`) (assembly transforms), `struct_asym`, cell/symmetry (unit
+  cell). Same `queryForLine` switch in `SourceInspector.tsx`.
+- Optional: extend hover to the fold-rail group nodes (entity / secondary-structure groups), and
+  reconsider whether atom-row CLICK should focus the residue rather than the single atom.
 
 ## Notes
 

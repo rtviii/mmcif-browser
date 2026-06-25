@@ -60,6 +60,29 @@ export const buildEntityQuery = (entityId: string) =>
     "chain-test": MS.core.rel.eq([MS.ammp("label_entity_id"), entityId]),
   });
 
+// All instances of a chemical component (e.g. every HEM ligand), by residue name.
+export const buildComponentQuery = (compId: string) =>
+  MS.struct.generator.atomGroups({
+    "residue-test": MS.core.rel.eq([MS.ammp("label_comp_id"), compId]),
+  });
+
+// Two residues (the partners of a struct_conn bond / contact), possibly on different chains.
+export const buildBondQuery = (
+  chain1: string,
+  seq1: number,
+  chain2: string,
+  seq2: number,
+) => {
+  const residue = (chain: string, seq: number) =>
+    MS.core.logic.and([
+      MS.core.rel.eq([MS.ammp("auth_asym_id"), chain]),
+      MS.core.rel.eq([MS.ammp("auth_seq_id"), seq]),
+    ]);
+  return MS.struct.generator.atomGroups({
+    "atom-test": MS.core.logic.or([residue(chain1, seq1), residue(chain2, seq2)]),
+  });
+};
+
 export const buildSurroundingsQuery = (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   baseQuery: any,

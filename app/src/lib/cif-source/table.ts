@@ -31,9 +31,7 @@ export function buildLoopTable(doc: CifDocument, span: LoopSpan, file: MolCifFil
   const fields = span.fieldNames.map((f) => cat.getField(f));
   const rowCount = cat.rowCount;
 
-  const starts = rowStarts(doc, span, rowCount);
-  const lineToRow = new Map<number, number>();
-  starts.forEach((ln, ri) => lineToRow.set(ln, ri));
+  const lineToRow = buildLineToRow(doc, span, rowCount);
 
   const contLines: number[] = [];
   for (let ln = span.dataStart; ln <= span.dataEnd; ln++) {
@@ -54,6 +52,15 @@ export function buildLoopTable(doc: CifDocument, span: LoopSpan, file: MolCifFil
   }
 
   return { fields, rowCount, lineToRow, contLines, widths };
+}
+
+// Map each data row-start physical line to its parsed row index. Continuation lines of a
+// wrapped row are absent from the map. Reused by the 3D interaction resolver.
+export function buildLineToRow(doc: CifDocument, span: LoopSpan, rowCount: number): Map<number, number> {
+  const lineToRow = new Map<number, number>();
+  if (span.dataStart < 0) return lineToRow;
+  rowStarts(doc, span, rowCount).forEach((ln, ri) => lineToRow.set(ln, ri));
+  return lineToRow;
 }
 
 // First physical line of each data row. Fast path when the loop is one line per row;
