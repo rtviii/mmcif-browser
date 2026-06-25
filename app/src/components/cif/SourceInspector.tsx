@@ -158,7 +158,18 @@ export default function SourceInspector({
     setCollapsed(s);
   }, [tree, collapsePreamble]);
 
-  const onExpandAll = useCallback(() => setCollapsed(new Set()), []);
+  // Single toggle: if anything is collapsed, expand everything; otherwise collapse every
+  // top-level category to a one-line placeholder.
+  const onToggleExpandAll = useCallback(() => {
+    setCollapsed((prev) => {
+      if (prev.size === 0) {
+        const s = new Set<string>();
+        if (tree) for (const r of tree.roots) s.add(r.id);
+        return s;
+      }
+      return new Set();
+    });
+  }, [tree]);
 
   const onTogglePreamble = useCallback(() => {
     const next = !collapsePreamble;
@@ -307,7 +318,8 @@ export default function SourceInspector({
           onTogglePreamble={onTogglePreamble}
           onToggle={onToggle}
           onCollapseChains={onCollapseChains}
-          onExpandAll={onExpandAll}
+          allExpanded={collapsed.size === 0}
+          onToggleExpandAll={onToggleExpandAll}
           onHoverItem={(cat, field) => setHover({ kind: "item", cat, field })}
           onClearHover={() => setHover(null)}
           onRowEnter={onRowEnter}

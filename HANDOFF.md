@@ -61,6 +61,10 @@ the baseline is solid, so branch freely before starting the next batch.
     occlusion) + flat `ignoreLight` material, structures rendered as ball-and-stick (lifted from
     fend_tubulinxyz). Config in `lib/molstar/style.ts`; applied in `lib/molstar/viewer.ts`
     (`applyDefaultStyling` + `buildBallAndStick`, replacing the old cartoon preset).
+  - UI/UX batch (same branch): draggable vertical divider between the source and 3D panels
+    (`CifInspector.tsx`, resizes the Mol* canvas live via `handleResize`); a "go to category" search
+    box with native autosuggest that scrolls the virtual list (`SourceView.tsx`); and "Expand all"
+    reworked into a single Expand all ↔ Collapse all toggle (`SourceInspector.onToggleExpandAll`).
 
 ## Where things live (app/src)
 
@@ -80,12 +84,9 @@ the baseline is solid, so branch freely before starting the next batch.
 ## Immediate next task — feedback batch (2026-06-25)
 
 The full prioritized list (with root-cause diagnoses) is in memory: see `inspector-next-work.md`
-and `mol-viewer-style-pref.md`. The file-viewer batch AND the Mol* default look are DONE (branch
-`inspector-file-viewer`); what's left:
+and `mol-viewer-style-pref.md`. The file-viewer batch, the Mol* default look, AND the UI/UX batch
+are DONE (branch `inspector-file-viewer`); the one remaining item:
 
-- UI: draggable horizontal split between source view and 3D; category search-with-autosuggest in the
-  top bar; rework "Expand all" into an "Expand all ↔ Collapse all" toggle ("Collapse chains" reads as
-  inactive because atom_site chains start collapsed).
 - Brainstorm + build a category/item → 3D interaction map (entities via `buildEntityQuery`, bonds via
   `struct_conn`, secondary structure, assemblies, ligands, sites, unit cell). See the memory file.
 

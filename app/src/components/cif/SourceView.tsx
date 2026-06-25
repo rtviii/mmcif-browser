@@ -52,7 +52,8 @@ export interface SourceViewProps {
   onTogglePreamble: () => void;
   onToggle: (id: string) => void;
   onCollapseChains: () => void;
-  onExpandAll: () => void;
+  allExpanded: boolean;
+  onToggleExpandAll: () => void;
   onHoverItem: (cat: string, field: string) => void;
   onClearHover: () => void;
   // 3D linkage
@@ -94,6 +95,31 @@ export default function SourceView(props: SourceViewProps) {
     return gutterPx + Math.ceil(max * CH_PX) + 24;
   }, [doc, gutterPx]);
 
+  // Unique category names, for the search-to-scroll box.
+  const categories = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const s of doc.spans) if (s.category && !seen.has(s.category)) (seen.add(s.category), out.push(s.category));
+    return out.sort();
+  }, [doc]);
+
+  // Scroll the virtual list to a category's first line (or its collapsed placeholder).
+  const scrollToCategory = (name: string) => {
+    const span = doc.spans.find((s) => s.category === name);
+    if (!span) return;
+    const startLine = span.kind === "loop" ? span.loopKeywordLine : span.start;
+    let idx = visible.findIndex(
+      (r) =>
+        (r.kind === "line" && r.lineIndex === startLine) ||
+        (r.kind === "placeholder" && r.node.startLine === startLine),
+    );
+    if (idx < 0)
+      idx = visible.findIndex((r) =>
+        r.kind === "line" ? r.lineIndex >= startLine : r.node.startLine >= startLine,
+      );
+    if (idx >= 0) virtualizer.scrollToIndex(idx, { align: "start" });
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-neutral-800 px-2 text-[11px]">
@@ -126,11 +152,27 @@ export default function SourceView(props: SourceViewProps) {
           Collapse chains
         </button>
         <button
-          onClick={props.onExpandAll}
+          onClick={props.onToggleExpandAll}
           className="rounded border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-neutral-300 hover:bg-neutral-800"
         >
-          Expand all
+          {props.allExpanded ? "Collapse all" : "Expand all"}
         </button>
+        <input
+          list="cif-category-list"
+          placeholder="go to category…"
+          className="w-40 rounded border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-neutral-200 placeholder-neutral-600 outline-none focus:border-sky-600"
+          onChange={(e) => {
+            if (categories.includes(e.target.value)) {
+              scrollToCategory(e.target.value);
+              e.target.blur();
+            }
+          }}
+        />
+        <datalist id="cif-category-list">
+          {categories.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
         <span className="ml-auto font-mono text-neutral-600">{visible.length.toLocaleString()} rows</span>
       </div>
 

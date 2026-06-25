@@ -1,6 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type ParsedCif, parseCif } from "@/lib/cif";
 import type { MolstarViewer as MolstarViewerInstance } from "@/lib/molstar/viewer";
 import { useStore } from "@/lib/store";
@@ -28,6 +28,31 @@ export default function CifInspector() {
   const [pdbId, setPdbId] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [viewer, setViewer] = useState<MolstarViewerInstance | null>(null);
+
+  // Draggable split: left (source) panel width as a % of the body; the 3D panel takes the rest.
+  const [leftPct, setLeftPct] = useState(50);
+  const splitRef = useRef<HTMLDivElement>(null);
+  const startDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const onMove = (ev: MouseEvent) => {
+      const rect = splitRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
+      setLeftPct(Math.min(80, Math.max(20, pct)));
+      viewer?.handleResize();
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      viewer?.handleResize();
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
 
   useEffect(() => {
     if (!file) return;
@@ -138,8 +163,8 @@ export default function CifInspector() {
       </div>
 
       {/* body */}
-      <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col border-r border-neutral-800">
+      <div ref={splitRef} className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-col border-r border-neutral-800" style={{ width: `${leftPct}%` }}>
           {!block ? (
             <div
               className={`m-3 flex flex-1 items-center justify-center rounded border border-dashed text-center text-xs ${
@@ -154,6 +179,12 @@ export default function CifInspector() {
             <SourceInspector file={file} parsed={parsed} viewer={viewer} />
           )}
         </div>
+
+        <div
+          onMouseDown={startDrag}
+          title="drag to resize"
+          className="w-1 shrink-0 cursor-col-resize bg-neutral-800 transition-colors hover:bg-sky-600"
+        />
 
         <div className="min-w-0 flex-1 bg-white">
           <MolstarViewer data={file?.data ?? null} binary={file?.binary ?? false} onReady={setViewer} />
