@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: #0a0a0a;
+  color: #e5e5e5;
+}
+
+/* React Flow attribution / theming tweaks */
+.react-flow__controls-button {
+  background: #27272a;
+  border-bottom: 1px solid #3f3f46;
+  color: #e5e5e5;
+}
+.react-flow__controls-button:hover {
+  background: #3f3f46;
+}
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
