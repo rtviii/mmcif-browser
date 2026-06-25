@@ -1,10 +1,11 @@
 "use client";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CifDocument } from "@/lib/cif-source/segment";
 import type { FoldNode, HierarchyMode } from "@/lib/cif-source/fold-tree";
 import type { VisibleRow } from "@/lib/cif-source/flatten";
-import { splitValues, type Token, tokenizeLine } from "@/lib/cif-source/tokenize";
+import type { LoopTable } from "@/lib/cif-source/table";
+import { type Token, tokenizeLine } from "@/lib/cif-source/tokenize";
 
 const NUMERIC = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
 
@@ -12,6 +13,7 @@ const ROW_H = 18;
 const CH_PX = 6.62; // approx monospace advance at 11px
 const LINE_NUM_W = 50;
 const RAIL_W = 13;
+const CELL_CAP = 20; // chars shown in a truncated cell badge before the click-for-full popover
 
 const TOKEN_CLASS: Record<Token["type"], string> = {
   keyword: "text-sky-400",
@@ -28,13 +30,22 @@ export interface ViewOptions {
   tableMode: boolean;
 }
 
+// A persistent popover anchored to a clicked cell / multiline value, dismissed by
+// clicking away or Escape.
+interface Popover {
+  x: number;
+  y: number;
+  field?: string;
+  value: string;
+}
+
 export interface SourceViewProps {
   doc: CifDocument;
   visible: VisibleRow[];
   mode: HierarchyMode;
   viewOptions: ViewOptions;
   maxDepth: number;
-  colWidths: Map<number, number[]>;
+  tableModel: Map<number, LoopTable>;
   onModeChange: (m: HierarchyMode) => void;
   onToggleNoise: () => void;
   onToggleTable: () => void;
@@ -52,16 +63,23 @@ export interface SourceViewProps {
 }
 
 export default function SourceView(props: SourceViewProps) {
-  const { doc, visible, mode, viewOptions, maxDepth, colWidths } = props;
+  const { doc, visible, mode, viewOptions, maxDepth, tableModel } = props;
   const parentRef = useRef<HTMLDivElement>(null);
   const gutterPx = LINE_NUM_W + maxDepth * RAIL_W;
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const toggleCell = (key: string) =>
-    setExpanded((s) => {
-      const n = new Set(s);
-      n.has(key) ? n.delete(key) : n.add(key);
-      return n;
-    });
+
+  const [pop, setPop] = useState<Popover | null>(null);
+  const openPopover = (anchor: HTMLElement, value: string, field?: string) => {
+    const r = anchor.getBoundingClientRect();
+    setPop({ x: r.left, y: r.bottom + 4, value, field });
+  };
+  useEffect(() => {
+    if (!pop) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPop(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pop]);
 
   const virtualizer = useVirtualizer({
     count: visible.length,
@@ -141,14 +159,14 @@ export default function SourceView(props: SourceViewProps) {
                   onNodeEnter={props.onNodeEnter}
                 />
                 {row.kind === "placeholder" ? (
-                  <PlaceholderRow row={row} onToggle={props.onToggle} />
+                  <PlaceholderRow row={row} tableMode={viewOptions.tableMode} onToggle={props.onToggle} />
                 ) : viewOptions.tableMode ? (
                   <TableLine
                     doc={doc}
                     lineIndex={row.lineIndex}
-                    colWidths={colWidths}
-                    expanded={expanded}
-                    toggleCell={toggleCell}
+                    tableModel={tableModel}
+                    gutterPx={gutterPx}
+                    openPopover={openPopover}
                     onHoverItem={props.onHoverItem}
                     onClearHover={props.onClearHover}
                   />
@@ -165,6 +183,19 @@ export default function SourceView(props: SourceViewProps) {
           })}
         </div>
       </div>
+
+      {pop && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setPop(null)} />
+          <div
+            className="fixed z-50 max-h-[50vh] max-w-[480px] overflow-auto rounded border border-neutral-700 bg-neutral-900 p-2 shadow-xl"
+            style={{ left: Math.max(8, Math.min(pop.x, window.innerWidth - 496)), top: pop.y }}
+          >
+            {pop.field && <div className="mb-1 font-mono text-[10px] text-emerald-300">{pop.field}</div>}
+            <pre className="whitespace-pre-wrap break-words font-mono text-[11px] text-neutral-200">{pop.value}</pre>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -315,41 +346,53 @@ function LineRow({
 
 const cellPx = (w: number) => Math.round((w + 1) * CH_PX);
 
-// Render a single source line as table cells when it belongs to a loop: the loop_ line
-// becomes a column-header row, data rows become aligned value cells. Everything else
-// (key-value categories, block headers) falls back to verbatim.
+// Render a loop's source line as table cells: the loop_ line becomes a column-header row,
+// each data row-start line becomes aligned value cells whose values come from the parsed
+// fields (so wrapped / quoted / ;-multiline rows table correctly). Everything else falls
+// back to verbatim.
 function TableLine({
   doc,
   lineIndex,
-  colWidths,
-  expanded,
-  toggleCell,
+  tableModel,
+  gutterPx,
+  openPopover,
   onHoverItem,
   onClearHover,
 }: {
   doc: CifDocument;
   lineIndex: number;
-  colWidths: Map<number, number[]>;
-  expanded: Set<string>;
-  toggleCell: (key: string) => void;
+  tableModel: Map<number, LoopTable>;
+  gutterPx: number;
+  openPopover: (anchor: HTMLElement, value: string, field?: string) => void;
   onHoverItem: (cat: string, field: string) => void;
   onClearHover: () => void;
 }) {
   const si = doc.lineToSpan[lineIndex];
   const span = si >= 0 ? doc.spans[si] : null;
   const line = doc.lines[lineIndex];
+  const table = si >= 0 ? tableModel.get(si) : undefined;
 
-  if (span && span.kind === "loop") {
-    const widths = colWidths.get(si);
-    if (widths && lineIndex === span.loopKeywordLine) {
+  if (span && span.kind === "loop" && table) {
+    // Column-header row (the loop_ keyword line). The category name is rendered as a
+    // zero-advance label hanging into the gutter so header and data cells share one left
+    // origin (otherwise the prefix staggers the columns).
+    if (lineIndex === span.loopKeywordLine) {
       return (
-        <span className="flex items-center pl-1 pr-4">
-          <span className="mr-2 shrink-0 text-[10px] uppercase tracking-wide text-sky-400">{span.category}</span>
+        <span className="relative flex items-center pl-1 pr-4">
+          {/* Category name as a zero-advance label pinned into the gutter to the left of
+              column 0, so header and data cells keep one shared left origin. */}
+          <span
+            className="pointer-events-none absolute top-0 z-20 truncate rounded-sm bg-neutral-900/95 px-1 text-right text-[9px] uppercase tracking-wide text-sky-400"
+            style={{ right: "100%", maxWidth: gutterPx - 2 }}
+            title={span.category}
+          >
+            {span.category}
+          </span>
           {span.fieldNames.map((f, c) => (
             <span
               key={c}
               className="mr-1 inline-block shrink-0 overflow-hidden text-ellipsis whitespace-nowrap border-b border-neutral-700 text-[10px] text-emerald-300/90 hover:text-emerald-200"
-              style={{ width: cellPx(widths[c]) }}
+              style={{ width: cellPx(table.widths[c]) }}
               title={f}
               onMouseEnter={() => onHoverItem(span.category, f)}
               onMouseLeave={onClearHover}
@@ -360,24 +403,22 @@ function TableLine({
         </span>
       );
     }
-    if (widths && span.dataStart >= 0 && lineIndex >= span.dataStart) {
-      const vals = splitValues(line.text);
-      if (vals.length === span.fieldNames.length) {
-        return (
-          <span className="flex items-center pl-1 pr-4">
-            {vals.map((v, c) => (
-              <DataCell
-                key={c}
-                value={v}
-                w={widths[c]}
-                cellKey={`${lineIndex}:${c}`}
-                expanded={expanded}
-                toggleCell={toggleCell}
-              />
-            ))}
-          </span>
-        );
-      }
+    // Data row-start line -> cells from parsed fields.
+    const rowIndex = table.lineToRow.get(lineIndex);
+    if (rowIndex !== undefined) {
+      return (
+        <span className="flex items-center pl-1 pr-4">
+          {table.fields.map((fld, c) => (
+            <DataCell
+              key={c}
+              value={fld ? fld.str(rowIndex) : ""}
+              field={span.fieldNames[c]}
+              w={table.widths[c]}
+              openPopover={openPopover}
+            />
+          ))}
+        </span>
+      );
     }
   }
   return <VerbatimContent line={line} onHoverItem={onHoverItem} onClearHover={onClearHover} />;
@@ -385,67 +426,88 @@ function TableLine({
 
 function DataCell({
   value,
+  field,
   w,
-  cellKey,
-  expanded,
-  toggleCell,
+  openPopover,
 }: {
   value: string;
+  field: string;
   w: number;
-  cellKey: string;
-  expanded: Set<string>;
-  toggleCell: (key: string) => void;
+  openPopover: (anchor: HTMLElement, value: string, field?: string) => void;
 }) {
-  const cls =
-    value === "?" || value === "." || value === ""
-      ? "text-neutral-600"
-      : NUMERIC.test(value)
-        ? "text-orange-300"
-        : "text-neutral-300";
-  const truncated = value.length > w;
-  if (expanded.has(cellKey)) {
+  const placeholder = value === "?" || value === "." || value === "";
+  const cls = placeholder
+    ? "text-neutral-600"
+    : NUMERIC.test(value)
+      ? "text-orange-300"
+      : "text-neutral-300";
+
+  const longValue = value.length > w || value.includes("\n");
+  if (!longValue) {
     return (
       <span
-        className={`mr-1 inline-block shrink-0 cursor-pointer whitespace-pre-wrap break-all ${cls}`}
-        style={{ maxWidth: 360 }}
-        onClick={(e) => {
-          e.stopPropagation();
-          toggleCell(cellKey);
-        }}
+        className={`mr-1 inline-block shrink-0 overflow-hidden whitespace-nowrap ${cls}`}
+        style={{ width: cellPx(w) }}
       >
-        {value}
+        {value === "" ? "·" : value}
       </span>
     );
   }
+
+  // Long / multiline value: a compact badge with a thin outline; click -> persistent popover.
+  const preview = value.replace(/\s+/g, " ").trim().slice(0, CELL_CAP);
   return (
-    <span
-      className={`mr-1 inline-block shrink-0 overflow-hidden text-ellipsis whitespace-nowrap ${cls} ${
-        truncated ? "cursor-pointer underline decoration-dotted decoration-neutral-600" : ""
-      }`}
-      style={{ width: cellPx(w) }}
-      title={truncated ? value : undefined}
-      onClick={truncated ? (e) => { e.stopPropagation(); toggleCell(cellKey); } : undefined}
+    <button
+      className={`mr-1 inline-flex shrink-0 items-center gap-0.5 overflow-hidden whitespace-nowrap rounded-sm border border-neutral-700 bg-neutral-900/40 px-1 text-left hover:border-sky-500/70 hover:text-sky-200 ${cls}`}
+      style={{ maxWidth: cellPx(Math.max(w, CELL_CAP)) + 10 }}
+      title="click for full value"
+      onClick={(e) => {
+        e.stopPropagation();
+        openPopover(e.currentTarget, value, field);
+      }}
     >
-      {value === "" ? "·" : value}
-    </span>
+      <span className="overflow-hidden text-ellipsis">{preview}</span>
+      <span className="shrink-0 text-[8px] text-neutral-500">▦</span>
+    </button>
   );
 }
 
 function PlaceholderRow({
   row,
+  tableMode,
   onToggle,
 }: {
   row: Extract<VisibleRow, { kind: "placeholder" }>;
+  tableMode: boolean;
   onToggle: (id: string) => void;
 }) {
+  const click = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggle(row.node.id);
+  };
+  // In table mode, split the node label on its " · " separators into fixed-width columns so
+  // sibling placeholders (entity / chain / residue summaries) line up vertically.
+  if (tableMode) {
+    const parts = row.node.label.split(" · ");
+    return (
+      <button onClick={click} className="flex items-center pl-1 pr-4 text-left hover:bg-neutral-900/60">
+        {parts.map((p, i) => (
+          <span
+            key={i}
+            className={`mr-2 inline-block shrink-0 overflow-hidden text-ellipsis whitespace-nowrap ${
+              i === 0 ? "text-neutral-300" : "text-neutral-500"
+            }`}
+            style={{ width: i === 0 ? 170 : 116 }}
+          >
+            {p}
+          </span>
+        ))}
+        <span className="shrink-0 text-[10px] text-neutral-600">… {row.hiddenCount.toLocaleString()} lines</span>
+      </button>
+    );
+  }
   return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle(row.node.id);
-      }}
-      className="flex items-center gap-2 pl-1 pr-4 text-left hover:bg-neutral-900/60"
-    >
+    <button onClick={click} className="flex items-center gap-2 pl-1 pr-4 text-left hover:bg-neutral-900/60">
       <span className="text-neutral-400">{row.node.label}</span>
       <span className="text-[10px] text-neutral-600">… {row.hiddenCount.toLocaleString()} lines</span>
     </button>

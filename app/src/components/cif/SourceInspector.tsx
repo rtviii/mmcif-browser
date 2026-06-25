@@ -10,10 +10,10 @@ import {
   isPreamble,
 } from "@/lib/cif-source/fold-tree";
 import { segmentDocument } from "@/lib/cif-source/segment";
-import { splitValues } from "@/lib/cif-source/tokenize";
+import { buildLoopTable, type LoopTable } from "@/lib/cif-source/table";
 import { asMolCifFile } from "@/lib/cif-source/types";
 import type { MolstarViewer } from "@/lib/molstar/viewer";
-import { buildChainQuery, buildResidueQuery, executeQuery } from "@/lib/molstar/queries";
+import { buildAtomQuery, buildChainQuery, buildResidueQuery, executeQuery } from "@/lib/molstar/queries";
 import { Definition, type HoverTarget } from "./Definition";
 import SourceView, { type ViewOptions } from "./SourceView";
 
@@ -69,6 +69,20 @@ export default function SourceInspector({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tree]);
 
+  // Per-loop table model (cells sourced from Mol*'s parsed fields, row<->line mapping,
+  // column widths). Only built in table mode.
+  const tableModel = useMemo(() => {
+    const m = new Map<number, LoopTable>();
+    if (!doc || !parsed || !tableMode) return m;
+    const file = asMolCifFile(parsed.raw);
+    doc.spans.forEach((span, si) => {
+      if (span.kind !== "loop") return;
+      const t = buildLoopTable(doc, span, file);
+      if (t) m.set(si, t);
+    });
+    return m;
+  }, [doc, parsed, tableMode]);
+
   const hiddenLines = useMemo(() => {
     if ((!hideNoise && !tableMode) || !doc) return undefined;
     const set = new Set<number>();
@@ -79,33 +93,19 @@ export default function SourceInspector({
         if (t === "" || t.startsWith("#")) set.add(l.index);
       }
     }
-    for (const s of doc.spans) {
+    for (let si = 0; si < doc.spans.length; si++) {
+      const s = doc.spans[si];
       if (s.kind !== "loop") continue;
       // hide loop_ unless table mode is using it as the column-header row
       if (hideNoise && !tableMode) set.add(s.loopKeywordLine);
-      if (tableMode) for (const d of s.declLines) set.add(d); // decls -> column headers
+      if (tableMode) {
+        for (const d of s.declLines) set.add(d); // decls -> column headers
+        const t = tableModel.get(si);
+        if (t) for (const ln of t.contLines) set.add(ln); // wrapped-row continuation lines
+      }
     }
     return set.size ? set : undefined;
-  }, [doc, hideNoise, tableMode]);
-
-  // Per-loop column widths (chars), sampled from the first data rows, for table alignment.
-  const colWidths = useMemo(() => {
-    const m = new Map<number, number[]>();
-    if (!doc || !tableMode) return m;
-    doc.spans.forEach((span, si) => {
-      if (span.kind !== "loop" || span.dataStart < 0) return;
-      const w = span.fieldNames.map((f) => Math.min(f.length, 28));
-      const end = Math.min(span.dataEnd, span.dataStart + 40);
-      for (let ln = span.dataStart; ln <= end; ln++) {
-        const vals = splitValues(doc.lines[ln].text);
-        for (let c = 0; c < w.length && c < vals.length; c++) {
-          w[c] = Math.max(w[c], Math.min(28, vals[c].length));
-        }
-      }
-      m.set(si, w);
-    });
-    return m;
-  }, [doc, tableMode]);
+  }, [doc, hideNoise, tableMode, tableModel]);
 
   const visible = useMemo(
     () => (doc && tree ? flattenVisible(doc, tree, collapsed, { hiddenLines }) : []),
@@ -191,6 +191,36 @@ export default function SourceInspector({
     return { chain: asym.str(row), seq: seq ? seq.int(row) : 0 };
   };
 
+  // Full atom identity for an atom_site row, for atom-granularity highlight/focus.
+  const atomFor = (
+    block: number,
+    row: number,
+  ): { chain: string; seq: number; atom: string; alt: string } | null => {
+    if (!parsed) return null;
+    const cat = asMolCifFile(parsed.raw).blocks[block]?.categories["atom_site"];
+    const asym = cat?.getField("auth_asym_id");
+    if (!asym) return null;
+    const seq = cat?.getField("auth_seq_id");
+    const atom = cat?.getField("label_atom_id");
+    const alt = cat?.getField("label_alt_id");
+    return {
+      chain: asym.str(row),
+      seq: seq ? seq.int(row) : 0,
+      atom: atom ? atom.str(row) : "",
+      alt: alt ? alt.str(row) : "",
+    };
+  };
+
+  // atom_site is one physical line per row, so line -> row is a direct offset.
+  const atomForLine = (lineIndex: number) => {
+    if (!doc) return null;
+    const span = doc.spans[doc.lineToSpan[lineIndex]];
+    if (!span || span.kind !== "loop" || span.category !== "atom_site" || span.dataStart < 0) return null;
+    const row = lineIndex - span.dataStart;
+    if (row < 0 || row >= span.dataLineCount) return null;
+    return atomFor(span.block, row);
+  };
+
   const residueForLine = (lineIndex: number): { chain: string; seq: number } | null => {
     if (!doc) return null;
     const span = doc.spans[doc.lineToSpan[lineIndex]];
@@ -218,6 +248,11 @@ export default function SourceInspector({
 
   const onRowEnter = (lineIndex: number) =>
     throttle(() => {
+      const a = atomForLine(lineIndex);
+      if (a && a.atom) {
+        show(buildAtomQuery(a.chain, a.seq, a.atom, a.alt || undefined), false);
+        return;
+      }
       const r = residueForLine(lineIndex);
       show(r ? buildResidueQuery(r.chain, r.seq) : null, false);
     });
@@ -245,6 +280,11 @@ export default function SourceInspector({
   };
 
   const onRowClick = (lineIndex: number) => {
+    const a = atomForLine(lineIndex);
+    if (a && a.atom) {
+      show(buildAtomQuery(a.chain, a.seq, a.atom, a.alt || undefined), true);
+      return;
+    }
     const r = residueForLine(lineIndex);
     if (r) show(buildResidueQuery(r.chain, r.seq), true);
   };
@@ -260,7 +300,7 @@ export default function SourceInspector({
           mode={mode}
           viewOptions={viewOptions}
           maxDepth={maxDepth}
-          colWidths={colWidths}
+          tableModel={tableModel}
           onModeChange={setMode}
           onToggleNoise={() => setHideNoise((v) => !v)}
           onToggleTable={() => setTableMode((v) => !v)}

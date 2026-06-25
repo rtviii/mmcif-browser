@@ -38,6 +38,23 @@ export const buildMultiResidueQuery = (chainId: string, authSeqIds: number[]) =>
     "residue-test": MS.core.set.has([MS.set(...authSeqIds), MS.ammp("auth_seq_id")]),
   });
 
+// A single atom: chain + residue + atom name (optionally disambiguated by altloc).
+export const buildAtomQuery = (
+  chainId: string,
+  authSeqId: number,
+  atomId: string,
+  altId?: string,
+) => {
+  const atomNameTest = MS.core.rel.eq([MS.ammp("label_atom_id"), atomId]);
+  return MS.struct.generator.atomGroups({
+    "chain-test": MS.core.rel.eq([MS.ammp("auth_asym_id"), chainId]),
+    "residue-test": MS.core.rel.eq([MS.ammp("auth_seq_id"), authSeqId]),
+    "atom-test": altId
+      ? MS.core.logic.and([atomNameTest, MS.core.rel.eq([MS.ammp("label_alt_id"), altId])])
+      : atomNameTest,
+  });
+};
+
 export const buildEntityQuery = (entityId: string) =>
   MS.struct.generator.atomGroups({
     "chain-test": MS.core.rel.eq([MS.ammp("label_entity_id"), entityId]),
