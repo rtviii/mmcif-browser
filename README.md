@@ -58,10 +58,40 @@ npm install
 npm run dev      # http://localhost:3000
 ```
 
+## Pages
+
+- `/` — Dictionary: graph explorer + sidebar + search.
+- `/inspector` — CIF inspector (v0 stopgap, being reworked — see `ROADMAP.md`).
+
+The inspector currently parses the uploaded/fetched file with Mol*'s CIF reader (`src/lib/cif.ts`),
+renders a tree of categories whose rows are each category's columns with one sample value +
+dictionary intellisense, and shows the file in an embedded Mol* 3D viewer. The intended design is
+different: a folded, "linted" view of the file's actual content (collapse atoms under a residue,
+residues under a chain, …), with later per-row 3D linkage. See `ROADMAP.md`. Fetch-by-PDB-ID pulls
+from `files.rcsb.org`.
+
+### Mol* integration (`src/lib/molstar/`, `src/hooks/useMolstarViewer.ts`)
+
+The 3D side uses Mol* 5.x via a small, generic foundation adapted from the patterns in
+`~/dev/fend_tubulinxyz` (generalised — no tubulin presets/palettes):
+
+- `lib/molstar/viewer.ts` — `MolstarViewer`, a pure wrapper class (no React/state) owning the
+  plugin lifecycle and low-level ops: `load`/`loadFromUrl`, `highlightLoci`/`focusLoci`,
+  `subscribeToHover`/`subscribeToClick` (→ `{chainId, authSeqId, compId}`), selection,
+  `projectToScreen`, `resetCamera`, `dispose`.
+- `lib/molstar/spec.ts` — default plugin spec with the surrounding UI chrome hidden.
+- `lib/molstar/queries.ts` — MolScript query builders (chain / residue / entity / surroundings) +
+  `executeQuery` → loci; the bridge from "an id" to "something to highlight".
+- `hooks/useMolstarViewer.ts` — binds a `MolstarViewer` to a container ref with StrictMode-safe
+  deferred disposal.
+- `components/MolstarViewer.tsx` — thin React boundary; lazy-loaded (`ssr:false`).
+
+This foundation exposes the highlight/focus/hover/click primitives that interactive features
+(tree↔3D selection sync, a chains/entities panel, custom coloring) build on.
+
 ## Status / roadmap
 
-- [x] Part 0: dictionary -> structured JSON pipeline (607 categories, 6801 items, 625 edges)
-- [x] Part A: graph explorer — radial ego view, click/hover/expand, description sidebar, search
-- [ ] Part A polish: overview ("all categories") mode, group filters, usage-coverage enrichment
-- [ ] Part B: CIF inspector — upload mmCIF/BinaryCIF, foldable category blocks, intellisense
-      driven by `dictionary.json` (parse client-side with Mol*'s CIF reader)
+See `ROADMAP.md` for the full record of what's done and what's next. In short: the data pipeline,
+the dictionary graph explorer (`/`), and the generic Mol* foundation are done; the inspector
+(`/inspector`) is a v0 stopgap being reworked into a folded, linted source view of the file's
+content with later 3D linkage.

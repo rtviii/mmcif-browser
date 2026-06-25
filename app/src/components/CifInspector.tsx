@@ -1,8 +1,9 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { fieldValues, type ParsedCif, parseCif } from "@/lib/cif";
+import { useEffect, useState } from "react";
+import { type ParsedCif, parseCif } from "@/lib/cif";
 import { useStore } from "@/lib/store";
+import SourceInspector from "./cif/SourceInspector";
 
 const MolstarViewer = dynamic(() => import("./MolstarViewer"), { ssr: false });
 
@@ -12,14 +13,8 @@ interface LoadedFile {
   name: string;
 }
 
-type HoverTarget =
-  | { kind: "category"; cat: string }
-  | { kind: "item"; cat: string; field: string }
-  | null;
-
 export default function CifInspector() {
   const init = useStore((s) => s.init);
-  const dict = useStore((s) => s.dict);
   useEffect(() => {
     init();
   }, [init]);
@@ -27,8 +22,6 @@ export default function CifInspector() {
   const [file, setFile] = useState<LoadedFile | null>(null);
   const [parsed, setParsed] = useState<ParsedCif | null>(null);
   const [blockIndex, setBlockIndex] = useState(0);
-  const [openCats, setOpenCats] = useState<Set<string>>(new Set());
-  const [hover, setHover] = useState<HoverTarget>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [pdbId, setPdbId] = useState("");
@@ -44,7 +37,6 @@ export default function CifInspector() {
         if (cancelled) return;
         setParsed(p);
         setBlockIndex(0);
-        setOpenCats(new Set());
       })
       .catch((e) => !cancelled && setError(e?.message ?? String(e)))
       .finally(() => !cancelled && setLoading(false));
@@ -145,7 +137,7 @@ export default function CifInspector() {
 
       {/* body */}
       <div className="flex min-h-0 flex-1">
-        <div className="flex w-[460px] shrink-0 flex-col border-r border-neutral-800">
+        <div className="flex min-w-0 flex-1 flex-col border-r border-neutral-800">
           {!block ? (
             <div
               className={`m-3 flex flex-1 items-center justify-center rounded border border-dashed text-center text-xs ${
@@ -157,76 +149,7 @@ export default function CifInspector() {
               or open one / fetch a PDB ID above.
             </div>
           ) : (
-            <>
-              <div className="min-h-0 flex-1 overflow-y-auto py-1">
-                {block.categories.map((c) => {
-                  const open = openCats.has(c.name);
-                  const inDict = !!dict?.categories[c.name];
-                  return (
-                    <div key={c.name}>
-                      <button
-                        className="flex w-full items-center gap-1.5 px-3 py-1 text-left hover:bg-neutral-800/50"
-                        onClick={() =>
-                          setOpenCats((s) => {
-                            const n = new Set(s);
-                            n.has(c.name) ? n.delete(c.name) : n.add(c.name);
-                            return n;
-                          })
-                        }
-                        onMouseEnter={() => setHover({ kind: "category", cat: c.name })}
-                      >
-                        <span className="text-[9px] text-neutral-600">{open ? "▼" : "▶"}</span>
-                        <span
-                          className={`flex-1 truncate font-mono text-[12px] ${
-                            inDict ? "text-neutral-100" : "text-amber-300"
-                          }`}
-                          title={inDict ? undefined : "not in dictionary"}
-                        >
-                          {c.name}
-                        </span>
-                        <span className="font-mono text-[9px] text-neutral-500">{c.rowCount}</span>
-                      </button>
-                      {open && (
-                        <div className="pb-1">
-                          {c.fieldNames.map((f) => {
-                            const itemName = `_${c.name}.${f}`;
-                            const it = dict?.items[itemName];
-                            const sample = parsed ? fieldValues(parsed, blockIndex, c.name, f, 1)[0] : "";
-                            return (
-                              <div
-                                key={f}
-                                className="flex items-center gap-2 py-0.5 pl-7 pr-3 hover:bg-neutral-800/40"
-                                onMouseEnter={() => setHover({ kind: "item", cat: c.name, field: f })}
-                              >
-                                <span
-                                  className={`truncate font-mono text-[11px] ${
-                                    it ? "text-neutral-300" : "text-amber-300/80"
-                                  }`}
-                                >
-                                  {f}
-                                </span>
-                                {it?.mandatory === "yes" && (
-                                  <span className="text-[8px] text-rose-400">req</span>
-                                )}
-                                {it?.type && (
-                                  <span className="rounded bg-neutral-800 px-1 text-[8px] text-neutral-400">
-                                    {it.type}
-                                  </span>
-                                )}
-                                <span className="ml-auto max-w-[44%] truncate font-mono text-[10px] text-neutral-500">
-                                  {sample}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              <Definition hover={hover} />
-            </>
+            <SourceInspector file={file} parsed={parsed} />
           )}
         </div>
 
@@ -234,64 +157,6 @@ export default function CifInspector() {
           <MolstarViewer data={file?.data ?? null} binary={file?.binary ?? false} />
         </div>
       </div>
-    </div>
-  );
-}
-
-function Definition({ hover }: { hover: HoverTarget }) {
-  const dict = useStore((s) => s.dict);
-  const content = useMemo(() => {
-    if (!dict || !hover) return null;
-    if (hover.kind === "category") {
-      const c = dict.categories[hover.cat];
-      if (!c) return { title: hover.cat, body: null, note: "Not defined in the PDBx/mmCIF dictionary." };
-      return { title: c.name, body: c.description, type: null, enums: null, group: c.groups.join(", ") };
-    }
-    const it = dict.items[`_${hover.cat}.${hover.field}`];
-    if (!it) return { title: `_${hover.cat}.${hover.field}`, body: null, note: "Not defined in the PDBx/mmCIF dictionary." };
-    const t = it.type ? dict.types[it.type] : null;
-    return {
-      title: it.name,
-      body: it.description,
-      type: t ? `${t.code} (${t.primitive})` : it.type,
-      enums: it.enums ?? null,
-      mandatory: it.mandatory,
-      units: it.units,
-    };
-  }, [dict, hover]);
-
-  return (
-    <div className="h-44 shrink-0 overflow-y-auto border-t border-neutral-800 bg-neutral-900/50 p-3">
-      {!content ? (
-        <div className="text-[11px] text-neutral-600">Hover a category or item for its definition.</div>
-      ) : (
-        <>
-          <div className="font-mono text-[12px] text-neutral-100">{content.title}</div>
-          <div className="mt-1 flex flex-wrap gap-2 font-mono text-[10px] text-neutral-500">
-            {"type" in content && content.type && <span>type: {content.type}</span>}
-            {"mandatory" in content && content.mandatory && <span>mandatory: {content.mandatory}</span>}
-            {"units" in content && content.units && <span>units: {content.units}</span>}
-            {"group" in content && content.group && <span>groups: {content.group}</span>}
-          </div>
-          {"note" in content && content.note && (
-            <div className="mt-1 text-[11px] text-amber-300/90">{content.note}</div>
-          )}
-          {content.body && (
-            <p className="mt-1.5 whitespace-pre-wrap text-[11px] leading-relaxed text-neutral-300">
-              {content.body}
-            </p>
-          )}
-          {"enums" in content && content.enums && (
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {content.enums.map(([v]) => (
-                <span key={v} className="rounded bg-sky-500/10 px-1 font-mono text-[10px] text-sky-300">
-                  {v}
-                </span>
-              ))}
-            </div>
-          )}
-        </>
-      )}
     </div>
   );
 }

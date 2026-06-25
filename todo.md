@@ -1,0 +1,3 @@
+Ok awesome start. except let's not visualize the whole thing right away, it indeed becomes pretty slow (unless you know how to fix this). We can also remove some styling and super futuristic looking animations from shit, just make it look usable and comapct and slick, but no need for a crypto-website extravagances.
+
+Furthermore let's think about how we can now indeed integrate molstar here. I would ideally want to eventually be able to not only use its parser for categories of the real cif file, but also have it be visualized in 3d side by side. (this can probably be a separate page from the dictionary browser tiself...)

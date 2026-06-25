@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.4",
+    "@tanstack/react-virtual": "^3.14.3",
     "@xyflow/react": "^12.3.5",
     "minisearch": "^7.1.0",
     "molstar": "^5.10.1",
