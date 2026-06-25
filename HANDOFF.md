@@ -38,8 +38,11 @@ cd ~/dev/mmcif-browser && pipeline/.venv/bin/python pipeline/build_artifacts.py
 
 ## Current state (done)
 
+Everything below is committed (4 commits, `init` → `a60e4fe`) and the working tree is clean —
+the baseline is solid, so branch freely before starting the next batch.
+
 - Pipeline + Part A graph explorer (`/`): unchanged, working.
-- Inspector (`/inspector`) — the rework is DONE (this replaced the v0 column-summary tree):
+- Inspector (`/inspector`) — the rework is DONE and committed (this replaced the v0 column-summary tree):
   - Verbatim, syntax-highlighted source view; fold regions computed by parsing (the displayed bytes
     are the real file). `atom_site` folds chain > residue (lazy residues); other categories collapse
     at the category level. `auth_*`/`label_*` toggle. Dictionary hover-definition kept. Virtualized
@@ -48,8 +51,12 @@ cd ~/dev/mmcif-browser && pipeline/.venv/bin/python pipeline/build_artifacts.py
     level collapses from any line; hovering a rail highlights that chain/residue in 3D.
   - View toggles: Hide preamble, Hide noise, Table. Table mode renders loop categories as
     column-aligned tables (atom_site keeps its rails); KV categories stay verbatim.
-  - 3D linkage (source -> Mol*): hover a row/rail highlights, click an atom row focuses its residue.
+  - 3D linkage (source -> Mol*): hover a row/rail highlights, click an atom row focuses it.
     Viewer handle exposed via `MolstarViewer.tsx` `onReady`.
+  - File-viewer refinement batch (branch `inspector-file-viewer`): table cells now come from Mol*'s
+    parsed fields (`lib/cif-source/table.ts`), so wrapped-row loops (e.g. `entity_poly` `;`-sequences)
+    table; columns align (gutter-pinned category label); long values are badges with a click-popover;
+    atom rows target the ATOM (`buildAtomQuery`); collapsed placeholders are column-aligned.
 
 ## Where things live (app/src)
 
@@ -69,13 +76,9 @@ cd ~/dev/mmcif-browser && pipeline/.venv/bin/python pipeline/build_artifacts.py
 ## Immediate next task — feedback batch (2026-06-25)
 
 The full prioritized list (with root-cause diagnoses) is in memory: see `inspector-next-work.md`
-and `mol-viewer-style-pref.md`. Headlines:
+and `mol-viewer-style-pref.md`. The file-viewer batch is DONE (branch `inspector-file-viewer`);
+what's left:
 
-- File viewer (priority): fix Table-mode column stagger (header category-name prefix offsets the
-  columns); make wrapped-row loops table too (read cell values from Mol* fields, not by splitting the
-  source line); truncate long/`;`-multiline values to ~20 chars in a thin outline with click → a
-  persistent tooltip; atom hover/click should target the ATOM not the residue (add `buildAtomQuery`);
-  align the collapsed-placeholder columns in table mode.
 - Mol* viewer: white background + illustrative lighting + ball-and-stick default — lift from
   fend_tubulinxyz (query Deepwiki for its canvas/lighting/representation config).
 - UI: draggable horizontal split between source view and 3D; category search-with-autosuggest in the
@@ -88,5 +91,6 @@ and `mol-viewer-style-pref.md`. Headlines:
 
 - `~/dev/fend_tubulinxyz` is the user's tubulin viewer and the SOURCE of our Mol* patterns; it's
   pre-indexed in Deepwiki. Use Deepwiki for its molstar styling/representation specifics.
-- The repo is `git init`-ed but has NO commits yet; the working tree has the whole inspector rework
-  uncommitted. Consider a baseline commit at the start of next session if the user wants.
+- Git: `main` is at `a60e4fe` (the inspector rework: `4fa1242` → `433dfce` → `a60e4fe`, on `cbf9fa4`
+  init). The file-viewer refinement batch lives on branch `inspector-file-viewer` off `a60e4fe`,
+  not yet merged. Start the next batch (Mol* look / UI / interaction map) off that branch.
