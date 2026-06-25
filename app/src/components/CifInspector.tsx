@@ -155,7 +155,7 @@ export default function CifInspector() {
           )}
         </div>
 
-        <div className="min-w-0 flex-1 bg-black">
+        <div className="min-w-0 flex-1 bg-white">
           <MolstarViewer data={file?.data ?? null} binary={file?.binary ?? false} onReady={setViewer} />
         </div>
       </div>

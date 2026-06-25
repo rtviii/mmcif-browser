@@ -57,6 +57,10 @@ the baseline is solid, so branch freely before starting the next batch.
     parsed fields (`lib/cif-source/table.ts`), so wrapped-row loops (e.g. `entity_poly` `;`-sequences)
     table; columns align (gutter-pinned category label); long values are badges with a click-popover;
     atom rows target the ATOM (`buildAtomQuery`); collapsed placeholders are column-aligned.
+  - Mol* default look (same branch): white canvas + illustrative postprocessing (outline + ambient
+    occlusion) + flat `ignoreLight` material, structures rendered as ball-and-stick (lifted from
+    fend_tubulinxyz). Config in `lib/molstar/style.ts`; applied in `lib/molstar/viewer.ts`
+    (`applyDefaultStyling` + `buildBallAndStick`, replacing the old cartoon preset).
 
 ## Where things live (app/src)
 
@@ -76,11 +80,9 @@ the baseline is solid, so branch freely before starting the next batch.
 ## Immediate next task — feedback batch (2026-06-25)
 
 The full prioritized list (with root-cause diagnoses) is in memory: see `inspector-next-work.md`
-and `mol-viewer-style-pref.md`. The file-viewer batch is DONE (branch `inspector-file-viewer`);
-what's left:
+and `mol-viewer-style-pref.md`. The file-viewer batch AND the Mol* default look are DONE (branch
+`inspector-file-viewer`); what's left:
 
-- Mol* viewer: white background + illustrative lighting + ball-and-stick default — lift from
-  fend_tubulinxyz (query Deepwiki for its canvas/lighting/representation config).
 - UI: draggable horizontal split between source view and 3D; category search-with-autosuggest in the
   top bar; rework "Expand all" into an "Expand all ↔ Collapse all" toggle ("Collapse chains" reads as
   inactive because atom_site chains start collapsed).

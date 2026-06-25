@@ -11,8 +11,8 @@ import { renderReact18 } from "molstar/lib/mol-plugin-ui/react18";
 import { PluginUISpec } from "molstar/lib/mol-plugin-ui/spec";
 import { PluginCommands } from "molstar/lib/mol-plugin/commands";
 import { StateSelection } from "molstar/lib/mol-state";
-import { Color } from "molstar/lib/mol-util/color";
 import { viewerSpec } from "./spec";
+import { BALL_AND_STICK_COMPONENTS, STYLIZED_POSTPROCESSING, WHITE_BACKGROUND } from "./style";
 
 export interface PickInfo {
   chainId: string;
@@ -43,16 +43,26 @@ export class MolstarViewer {
   }
 
   private applyDefaultStyling(): void {
-    // match the app's dark theme instead of Mol*'s default white canvas
+    if (!this.ctx) return;
+    // Illustrative look (à la fend_tubulinxyz): white canvas + outline + ambient occlusion,
+    // and a flat (unlit) material on every representation.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    this.ctx?.canvas3d?.setProps({ renderer: { backgroundColor: Color(0x0a0a0a) } } as any);
+    this.ctx.canvas3d?.setProps({
+      postprocessing: STYLIZED_POSTPROCESSING,
+      renderer: { backgroundColor: WHITE_BACKGROUND },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    this.ctx.managers.structure.component.setOptions({
+      ...this.ctx.managers.structure.component.state.options,
+      ignoreLight: true,
+    });
   }
 
   handleResize(): void {
     this.ctx?.canvas3d?.handleResize();
   }
 
-  // --- data loading (parses + applies Mol*'s default representation preset) ---
+  // --- data loading (parses + applies a flat ball-and-stick representation) ---
 
   async load(data: string | Uint8Array, opts: { label?: string } = {}): Promise<void> {
     if (!this.ctx) throw new Error("Viewer not initialized");
@@ -63,7 +73,7 @@ export class MolstarViewer {
     if (!this.ctx) throw new Error("Viewer disposed during load");
     const trajectory = await this.ctx.builders.structure.parseTrajectory(raw, "mmcif");
     if (!this.ctx) throw new Error("Viewer disposed during load");
-    await this.ctx.builders.structure.hierarchy.applyPreset(trajectory, "default");
+    await this.buildBallAndStick(trajectory);
   }
 
   async loadFromUrl(url: string, opts: { binary?: boolean; label?: string } = {}): Promise<void> {
@@ -76,7 +86,28 @@ export class MolstarViewer {
     if (!this.ctx) throw new Error("Viewer disposed during load");
     const trajectory = await this.ctx.builders.structure.parseTrajectory(raw, "mmcif");
     if (!this.ctx) throw new Error("Viewer disposed during load");
-    await this.ctx.builders.structure.hierarchy.applyPreset(trajectory, "default");
+    await this.buildBallAndStick(trajectory);
+  }
+
+  // Build the structure and render every non-solvent component as flat ball-and-stick
+  // (the user's default look) rather than Mol*'s cartoon-based preset.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async buildBallAndStick(trajectory: any): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const model = await ctx.builders.structure.createModel(trajectory);
+    if (!this.ctx) return;
+    const structure = await ctx.builders.structure.createStructure(model);
+    if (!this.ctx) return;
+    for (const kind of BALL_AND_STICK_COMPONENTS) {
+      const comp = await ctx.builders.structure.tryCreateComponentStatic(structure, kind);
+      if (!comp || !this.ctx) continue;
+      await ctx.builders.structure.representation.addRepresentation(comp, {
+        type: "ball-and-stick",
+        typeParams: { ignoreLight: true },
+        color: "element-symbol",
+      });
+    }
   }
 
   async clear(): Promise<void> {
