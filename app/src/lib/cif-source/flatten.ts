@@ -1,13 +1,12 @@
-// Flatten the fold tree + collapse state into the linear list the virtualizer renders.
+// Flatten the fold tree + collapse state into the linear list the SOURCE virtualizer renders.
 //
-// Fully expanded, the output is the verbatim source lines in order. A collapsed node
-// becomes a single placeholder row that hides its line range. Every row carries its
-// `ancestors` — the stack of enclosing EXPANDED fold nodes, outer -> inner — so the
-// renderer can draw a nested fold rail in the gutter and let any level be collapsed from
-// any line.
+// Only top-level CATEGORY nodes fold here: expanded, a category emits a header row followed by
+// its verbatim source lines; collapsed, it emits just the header row (a one-line summary).
+// Chain/residue navigation lives in the outline pane (outline.ts), so the source data rows are
+// never interleaved with navigation. `ancestors` carries the enclosing category on line rows.
 //
-// `hiddenLines` (view option) drops noise lines (loop_/#/blank); the fold rails stay
-// reachable on the node's other lines, so nothing becomes uncollapsible.
+// `hiddenLines` (view option) drops noise lines (loop_/#/blank) and, in table mode, the lines
+// folded into table cells.
 
 import type { CifDocument } from "./segment";
 import type { FoldNode, FoldTree } from "./fold-tree";
@@ -16,7 +15,6 @@ export type FoldState = ReadonlySet<string>; // ids of COLLAPSED nodes
 
 export type VisibleRow =
   | { kind: "line"; lineIndex: number; ancestors: FoldNode[] }
-  | { kind: "placeholder"; node: FoldNode; hiddenCount: number; ancestors: FoldNode[] }
   | { kind: "header"; node: FoldNode; collapsed: boolean; summary: string; ancestors: FoldNode[] };
 
 export interface FlattenOpts {
@@ -42,21 +40,12 @@ export function flattenVisible(
       const node = ni < list.length ? list[ni] : null;
       if (node && node.startLine === line) {
         ni++;
-        // Top-level category nodes get a header row: a block divider carrying the category
-        // name + count. Expanded -> the header is additive (content lines still follow it);
-        // collapsed -> the header REPLACES the usual placeholder (one clean collapsed header).
-        const isTopCat = ancestors.length === 0 && node.level === "category";
+        // Every root is a top-level category. Its header row is a block divider carrying the
+        // category name + count; expanded, the verbatim lines follow. Chain/residue nodes are
+        // never descended here — that hierarchy is navigated from the outline pane.
         const isCollapsed = collapsed.has(node.id);
-        if (isTopCat) {
-          out.push({ kind: "header", node, collapsed: isCollapsed, summary: node.summary ?? "", ancestors });
-        }
-        if (isCollapsed) {
-          if (!isTopCat) {
-            out.push({ kind: "placeholder", node, hiddenCount: node.endLine - node.startLine + 1, ancestors });
-          }
-        } else if (node.children && node.children.length) {
-          walk(node.children, node.startLine, node.endLine, ancestors.concat(node));
-        } else {
+        out.push({ kind: "header", node, collapsed: isCollapsed, summary: node.summary ?? "", ancestors });
+        if (!isCollapsed) {
           const anc = ancestors.concat(node);
           for (let l = node.startLine; l <= node.endLine; l++) {
             if (shown(l)) out.push({ kind: "line", lineIndex: l, ancestors: anc });

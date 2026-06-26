@@ -9,6 +9,7 @@ import {
   type HierarchyMode,
   isPreamble,
 } from "@/lib/cif-source/fold-tree";
+import { deepestVisibleNodeAt, flattenOutline } from "@/lib/cif-source/outline";
 import { segmentDocument } from "@/lib/cif-source/segment";
 import {
   buildKeyValueTable,
@@ -31,7 +32,8 @@ import {
 import { type FilterEntry } from "./CategoryFilter";
 import { type HoverTarget } from "./dict-lookup";
 import { HoverDefinitionTooltip } from "./HoverDefinitionTooltip";
-import SourceView, { type ViewOptions } from "./SourceView";
+import { OutlinePane, type OutlinePaneHandle } from "./OutlinePane";
+import SourceView, { type SourceViewHandle, type ViewOptions } from "./SourceView";
 
 interface LoadedFile {
   data: string | Uint8Array;
@@ -60,6 +62,19 @@ export default function SourceInspector({
   const [tableMode, setTableMode] = useState(false);
   const [filter, setFilter] = useState<FilterEntry[]>([]);
 
+  // Outline pane: its own expand state (separate from the source `collapsed`), the active
+  // (scroll-synced) node, a pending click->scroll request, and a transient source highlight.
+  const [outlineExpanded, setOutlineExpanded] = useState<Set<string>>(new Set());
+  const [activeOutlineId, setActiveOutlineId] = useState<string | null>(null);
+  const [pendingScroll, setPendingScroll] = useState<{ node: FoldNode; nonce: number } | null>(null);
+  const [highlightRange, setHighlightRange] = useState<{ start: number; end: number } | null>(null);
+  const [outlinePct, setOutlinePct] = useState(30);
+  const sourceRef = useRef<SourceViewHandle>(null);
+  const outlineRef = useRef<OutlinePaneHandle>(null);
+  const innerSplitRef = useRef<HTMLDivElement>(null);
+  const suppressTopChange = useRef(false);
+  const pendingNonce = useRef(0);
+
   const isText = !!file && !file.binary;
 
   const doc = useMemo(
@@ -72,17 +87,22 @@ export default function SourceInspector({
     return buildFoldTree(doc, asMolCifFile(parsed.raw), mode);
   }, [doc, parsed, mode]);
 
-  // Default view when a tree is (re)built: atom_site chains collapsed, plus preamble
-  // categories if that option is on.
+  // Default view when a tree is (re)built: the source collapses the atom_site category (so it
+  // doesn't dump tens of thousands of atom lines) plus preamble categories if that option is on;
+  // the outline expands every category (chains/residues stay lazy + collapsed).
   useEffect(() => {
-    const s = new Set<string>();
+    const collapsedSet = new Set<string>();
+    const expandedSet = new Set<string>();
     if (tree) {
       for (const root of tree.roots) {
-        if (root.children) for (const c of root.children) if (c.level === "chain") s.add(c.id);
-        if (collapsePreamble && isPreamble(root.category)) s.add(root.id);
+        expandedSet.add(root.id);
+        if (root.category === "atom_site") collapsedSet.add(root.id);
+        if (collapsePreamble && isPreamble(root.category)) collapsedSet.add(root.id);
       }
     }
-    setCollapsed(s);
+    setCollapsed(collapsedSet);
+    setOutlineExpanded(expandedSet);
+    setActiveOutlineId(null);
     // collapsePreamble intentionally excluded: its toggle updates `collapsed` directly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tree]);
@@ -178,20 +198,14 @@ export default function SourceInspector({
     });
   }, [visible, filterCats, doc]);
 
-  // Number of fold-rail slots: category (1), + chain (2), + residue (3) where present.
-  const maxDepth = useMemo(() => {
-    let d = 1;
-    if (tree) {
-      for (const r of tree.roots) {
-        if (r.children?.length) {
-          d = Math.max(d, 2);
-          for (const c of r.children) if (c.lazy || c.children?.length) d = 3;
-        }
-        if (d === 3) break;
-      }
-    }
-    return d;
-  }, [tree]);
+  // Outline rows: the full FoldNode tree flattened against the outline's OWN expand state.
+  // Deps are tree + outlineExpanded only, so scrolling/folding the source never re-flattens it.
+  const outlineFlat = useMemo(() => (tree ? flattenOutline(tree, outlineExpanded) : []), [tree, outlineExpanded]);
+  const outlineIndexById = useMemo(() => {
+    const m = new Map<string, number>();
+    outlineFlat.forEach((r, i) => m.set(r.node.id, i));
+    return m;
+  }, [outlineFlat]);
 
   const onToggle = useCallback(
     (id: string) => {
@@ -213,16 +227,105 @@ export default function SourceInspector({
     [tree, collapsed],
   );
 
-  const onCollapseChains = useCallback(() => {
-    const s = new Set<string>();
-    if (tree) {
-      for (const root of tree.roots) {
-        if (root.children) for (const c of root.children) if (c.level === "chain") s.add(c.id);
-        if (collapsePreamble && isPreamble(root.category)) s.add(root.id);
+  // --- Outline pane: expand/collapse, click -> scroll, scroll -> select ----------------
+  const onOutlineToggle = useCallback(
+    (id: string) => {
+      if (!tree) return;
+      const node = tree.byId.get(id);
+      if (!outlineExpanded.has(id) && node?.lazy) ensureChildren(tree, node); // fill residues on first expand
+      setOutlineExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    [tree, outlineExpanded],
+  );
+
+  // Clicking an outline node force-expands its category in the SOURCE (so its lines exist),
+  // then requests a scroll. The scroll waits for `visibleShown` to rebuild (the effect below);
+  // `nonce` makes it fire even when the category was already expanded.
+  const onOutlineNodeClick = useCallback(
+    (node: FoldNode) => {
+      if (!doc || !tree) return;
+      const si = doc.lineToSpan[node.startLine];
+      const catId = node.level === "category" ? node.id : si >= 0 ? tree.roots[si]?.id : undefined;
+      if (catId) {
+        setCollapsed((prev) => {
+          if (!prev.has(catId)) return prev;
+          const next = new Set(prev);
+          next.delete(catId);
+          return next;
+        });
       }
+      setActiveOutlineId(node.id); // select the clicked node (scroll-sync is suppressed briefly)
+      setPendingScroll({ node, nonce: pendingNonce.current++ });
+    },
+    [doc, tree],
+  );
+
+  // Source scroll -> outline selection: resolve the top source line to the deepest outline-
+  // visible node and mark it (styling-only; never expands the outline or re-flattens it).
+  const onTopLineChange = useCallback(
+    (line: number) => {
+      if (suppressTopChange.current || !doc || !tree) return;
+      const si = doc.lineToSpan[line];
+      if (si < 0) return;
+      const catNode = tree.roots[si];
+      if (!catNode) return;
+      const node = deepestVisibleNodeAt(catNode, line, outlineExpanded);
+      if (node.id === activeOutlineId) return;
+      setActiveOutlineId(node.id);
+      const oi = outlineIndexById.get(node.id);
+      if (oi !== undefined) outlineRef.current?.scrollToIndex(oi);
+    },
+    [doc, tree, outlineExpanded, outlineIndexById, activeOutlineId],
+  );
+
+  // Resolve a pending click -> scroll once `visibleShown` reflects the forced category expand.
+  // Synchronous: the virtualizer derives the target offset from exact row sizes, so it needs no
+  // layout frame. We clear pendingScroll WITHOUT an effect cleanup so the re-render that clearing
+  // triggers doesn't cancel the transient suppress/highlight timers below.
+  useEffect(() => {
+    if (!pendingScroll || !doc) return;
+    const { node } = pendingScroll;
+    let idx = visibleShown.findIndex((r) => r.kind === "line" && r.lineIndex === node.startLine);
+    if (idx < 0) {
+      const si = doc.lineToSpan[node.startLine];
+      const catId = node.level === "category" ? node.id : si >= 0 ? tree?.roots[si]?.id : undefined;
+      if (catId) idx = visibleShown.findIndex((r) => r.kind === "header" && r.node.id === catId);
     }
-    setCollapsed(s);
-  }, [tree, collapsePreamble]);
+    setPendingScroll(null);
+    if (idx < 0) return; // filtered out / unresolvable -> skip (don't mutate the user's filter)
+    suppressTopChange.current = true;
+    sourceRef.current?.scrollToIndex(idx, "start");
+    setHighlightRange({ start: node.startLine, end: node.endLine });
+    setTimeout(() => {
+      suppressTopChange.current = false;
+    }, 250);
+    setTimeout(() => setHighlightRange(null), 1200);
+  }, [pendingScroll, visibleShown, doc, tree]);
+
+  const startOutlineDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const onMove = (ev: MouseEvent) => {
+      const rect = innerSplitRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
+      setOutlinePct(Math.min(55, Math.max(18, pct)));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
 
   // Single toggle: if anything is collapsed, expand everything; otherwise collapse every
   // top-level category to a one-line placeholder.
@@ -428,38 +531,62 @@ export default function SourceInspector({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {isText && doc && tree ? (
-        <SourceView
-          doc={doc}
-          visible={visibleShown}
-          mode={mode}
-          viewOptions={viewOptions}
-          maxDepth={maxDepth}
-          tableModel={tableModel}
-          kvTableModel={kvTableModel}
-          onModeChange={setMode}
-          onToggleNoise={() => setHideNoise((v) => !v)}
-          onToggleTable={() => setTableMode((v) => !v)}
-          onTogglePreamble={onTogglePreamble}
-          onToggle={onToggle}
-          onCollapseChains={onCollapseChains}
-          allExpanded={collapsed.size === 0}
-          onToggleExpandAll={onToggleExpandAll}
-          filter={filter}
-          onFilterChange={setFilter}
-          onHoverItem={(cat, field, e) => {
-            setHover({ kind: "item", cat, field });
-            setHoverAnchor({ x: e.clientX, y: e.clientY });
-          }}
-          onHoverCategory={(cat, e) => {
-            setHover({ kind: "category", cat });
-            setHoverAnchor({ x: e.clientX, y: e.clientY });
-          }}
-          onClearHover={() => setHover(null)}
-          onRowEnter={onRowEnter}
-          onNodeEnter={onNodeEnter}
-          onStructLeave={onStructLeave}
-          onRowClick={onRowClick}
-        />
+        <div ref={innerSplitRef} className="flex min-h-0 flex-1">
+          <div
+            className="flex min-w-0 flex-col border-r border-slate-200"
+            style={{ width: `${outlinePct}%` }}
+          >
+            <OutlinePane
+              ref={outlineRef}
+              rows={outlineFlat}
+              activeId={activeOutlineId}
+              onToggle={onOutlineToggle}
+              onNodeEnter={onNodeEnter}
+              onNodeLeave={onStructLeave}
+              onNodeClick={onOutlineNodeClick}
+            />
+          </div>
+          <div
+            onMouseDown={startOutlineDrag}
+            title="drag to resize"
+            className="w-1 shrink-0 cursor-col-resize bg-slate-200 transition-colors hover:bg-indigo-400"
+          />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <SourceView
+              ref={sourceRef}
+              doc={doc}
+              visible={visibleShown}
+              mode={mode}
+              viewOptions={viewOptions}
+              tableModel={tableModel}
+              kvTableModel={kvTableModel}
+              onModeChange={setMode}
+              onToggleNoise={() => setHideNoise((v) => !v)}
+              onToggleTable={() => setTableMode((v) => !v)}
+              onTogglePreamble={onTogglePreamble}
+              onToggle={onToggle}
+              allExpanded={collapsed.size === 0}
+              onToggleExpandAll={onToggleExpandAll}
+              filter={filter}
+              onFilterChange={setFilter}
+              onHoverItem={(cat, field, e) => {
+                setHover({ kind: "item", cat, field });
+                setHoverAnchor({ x: e.clientX, y: e.clientY });
+              }}
+              onHoverCategory={(cat, e) => {
+                setHover({ kind: "category", cat });
+                setHoverAnchor({ x: e.clientX, y: e.clientY });
+              }}
+              onClearHover={() => setHover(null)}
+              onRowEnter={onRowEnter}
+              onNodeEnter={onNodeEnter}
+              onStructLeave={onStructLeave}
+              onRowClick={onRowClick}
+              onTopLineChange={onTopLineChange}
+              highlightRange={highlightRange}
+            />
+          </div>
+        </div>
       ) : (
         <div className="flex min-h-0 flex-1 items-center justify-center p-4 text-center text-[11px] text-slate-400">
           {file?.binary

@@ -1,6 +1,6 @@
 "use client";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { CifDocument } from "@/lib/cif-source/segment";
 import type { FoldNode, HierarchyMode } from "@/lib/cif-source/fold-tree";
 import type { VisibleRow } from "@/lib/cif-source/flatten";
@@ -21,8 +21,8 @@ const NUMERIC = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
 const ROW_H = 18;
 const HEADER_H = 30; // category header rows are taller, doubling as inter-block spacing
 const CH_PX = 6.62; // approx monospace advance at 11px
-const GUTTER_PAD = 8; // small left pad before the fold rails (line numbers dropped)
-const RAIL_W = 14;
+const GUTTER_PAD = 8; // small left pad before the gutter / header chevron
+const RAIL_W = 14; // width of the category fold-chevron column (data aligns under the header name)
 const EXPAND_SLACK = 12; // chars a value may exceed its column width before it becomes click-to-expand
 
 const TOKEN_CLASS: Record<Token["type"], string> = {
@@ -49,12 +49,15 @@ interface Popover {
   value: string;
 }
 
+export interface SourceViewHandle {
+  scrollToIndex: (index: number, align?: "start" | "center" | "end" | "auto") => void;
+}
+
 export interface SourceViewProps {
   doc: CifDocument;
   visible: VisibleRow[];
   mode: HierarchyMode;
   viewOptions: ViewOptions;
-  maxDepth: number;
   tableModel: Map<number, LoopTable>;
   kvTableModel: Map<number, KeyValueTable>;
   onModeChange: (m: HierarchyMode) => void;
@@ -62,7 +65,6 @@ export interface SourceViewProps {
   onToggleTable: () => void;
   onTogglePreamble: () => void;
   onToggle: (id: string) => void;
-  onCollapseChains: () => void;
   allExpanded: boolean;
   onToggleExpandAll: () => void;
   filter: FilterEntry[];
@@ -75,12 +77,15 @@ export interface SourceViewProps {
   onNodeEnter: (node: FoldNode) => void;
   onStructLeave: () => void;
   onRowClick: (lineIndex: number) => void;
+  // Outline sync: report the top visible source line on scroll; flash a line range on click-to.
+  onTopLineChange?: (lineIndex: number) => void;
+  highlightRange?: { start: number; end: number } | null;
 }
 
-export default function SourceView(props: SourceViewProps) {
-  const { doc, visible, mode, viewOptions, maxDepth, tableModel, kvTableModel } = props;
+const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function SourceView(props, ref) {
+  const { doc, visible, mode, viewOptions, tableModel, kvTableModel } = props;
   const parentRef = useRef<HTMLDivElement>(null);
-  const gutterPx = GUTTER_PAD + maxDepth * RAIL_W;
+  const gutterPx = GUTTER_PAD + RAIL_W;
 
   const [pop, setPop] = useState<Popover | null>(null);
   const openPopover = (anchor: HTMLElement, value: string, field?: string) => {
@@ -103,6 +108,30 @@ export default function SourceView(props: SourceViewProps) {
     estimateSize: (i) => (visible[i]?.kind === "header" ? HEADER_H : ROW_H),
     overscan: 30,
   });
+
+  // Scroll-to handle for the outline pane (click an outline node -> scroll the source to it).
+  useImperativeHandle(
+    ref,
+    () => ({ scrollToIndex: (index, align = "start") => virtualizer.scrollToIndex(index, { align }) }),
+    [virtualizer],
+  );
+
+  // rAF-throttled top-line reporting for source-scroll -> outline-selection. Find the first
+  // virtual item whose bottom edge is below the scroll top (skips the overscan rows above).
+  const scrollRaf = useRef<number | null>(null);
+  const onScroll = () => {
+    if (!props.onTopLineChange || scrollRaf.current != null) return;
+    scrollRaf.current = requestAnimationFrame(() => {
+      scrollRaf.current = null;
+      const el = parentRef.current;
+      if (!el) return;
+      const top = el.scrollTop;
+      const items = virtualizer.getVirtualItems();
+      const it = items.find((v) => v.start + v.size > top) ?? items[0];
+      const row = it ? visible[it.index] : undefined;
+      if (row) props.onTopLineChange!(row.kind === "line" ? row.lineIndex : row.node.startLine);
+    });
+  };
 
   const contentWidth = useMemo(() => {
     let max = 0;
@@ -172,12 +201,6 @@ export default function SourceView(props: SourceViewProps) {
           Table
         </Toggle>
         <button
-          onClick={props.onCollapseChains}
-          className="rounded border border-slate-300 bg-white px-2 py-0.5 text-slate-700 hover:bg-slate-50"
-        >
-          Collapse chains
-        </button>
-        <button
           onClick={props.onToggleExpandAll}
           className="rounded border border-slate-300 bg-white px-2 py-0.5 text-slate-700 hover:bg-slate-50"
         >
@@ -193,16 +216,25 @@ export default function SourceView(props: SourceViewProps) {
         <span className="ml-auto font-mono text-slate-400">{visible.length.toLocaleString()} rows</span>
       </div>
 
-      <div ref={parentRef} className="no-scrollbar min-h-0 flex-1 overflow-auto bg-white font-mono text-[11px]">
+      <div
+        ref={parentRef}
+        onScroll={onScroll}
+        className="no-scrollbar min-h-0 flex-1 overflow-auto bg-white font-mono text-[11px]"
+      >
         <div style={{ height: virtualizer.getTotalSize(), width: contentWidth, position: "relative" }}>
           {virtualizer.getVirtualItems().map((vi) => {
             const row = visible[vi.index];
             const enter = () =>
               row.kind === "line" ? props.onRowEnter(row.lineIndex) : props.onNodeEnter(row.node);
+            const highlighted =
+              row.kind === "line" &&
+              props.highlightRange != null &&
+              row.lineIndex >= props.highlightRange.start &&
+              row.lineIndex <= props.highlightRange.end;
             return (
               <div
                 key={vi.key}
-                className="absolute left-0 flex items-center hover:bg-slate-50"
+                className={`absolute left-0 flex items-center ${highlighted ? "bg-amber-100" : "hover:bg-slate-50"}`}
                 style={{ top: 0, height: vi.size, transform: `translateY(${vi.start}px)`, width: contentWidth }}
                 onMouseEnter={enter}
                 onMouseLeave={props.onStructLeave}
@@ -218,18 +250,8 @@ export default function SourceView(props: SourceViewProps) {
                   />
                 ) : (
                   <>
-                    <Gutter
-                      maxDepth={maxDepth}
-                      gutterPx={gutterPx}
-                      lineIndex={row.kind === "line" ? row.lineIndex : undefined}
-                      ancestors={row.ancestors}
-                      self={row.kind === "placeholder" ? row.node : undefined}
-                      onToggle={props.onToggle}
-                      onNodeEnter={props.onNodeEnter}
-                    />
-                    {row.kind === "placeholder" ? (
-                      <PlaceholderRow row={row} onToggle={props.onToggle} />
-                    ) : viewOptions.tableMode ? (
+                    <Gutter gutterPx={gutterPx} />
+                    {viewOptions.tableMode ? (
                       <TableLine
                         doc={doc}
                         lineIndex={row.lineIndex}
@@ -269,7 +291,9 @@ export default function SourceView(props: SourceViewProps) {
       )}
     </div>
   );
-}
+});
+
+export default SourceView;
 
 function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -286,83 +310,10 @@ function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; c
   );
 }
 
-// Nested fold rails (line numbers dropped). Each rail belongs to an enclosing fold node;
-// clicking it collapses that node (so a chain or residue can be folded from any of its lines).
-// For a placeholder row, the collapsed node's own ▶ sits at the next rail slot.
-function Gutter({
-  maxDepth,
-  gutterPx,
-  lineIndex,
-  ancestors,
-  self,
-  onToggle,
-  onNodeEnter,
-}: {
-  maxDepth: number;
-  gutterPx: number;
-  lineIndex?: number;
-  ancestors: FoldNode[];
-  self?: FoldNode;
-  onToggle: (id: string) => void;
-  onNodeEnter: (node: FoldNode) => void;
-}) {
-  const slots = [];
-  for (let k = 0; k < maxDepth; k++) {
-    const a = ancestors[k];
-    if (a) {
-      // The category level owns a single chevron in its header row, so suppress the redundant
-      // gutter chevron there; deeper levels (chain / residue) keep theirs.
-      const atStart = lineIndex != null && a.startLine === lineIndex && a.level !== "category";
-      slots.push(
-        <Rail key={k} node={a} onToggle={onToggle} onNodeEnter={onNodeEnter}>
-          {atStart ? "▼" : ""}
-        </Rail>,
-      );
-    } else if (self && k === ancestors.length) {
-      slots.push(
-        <Rail key={k} node={self} onToggle={onToggle} onNodeEnter={onNodeEnter} chevron>
-          ▶
-        </Rail>,
-      );
-    } else {
-      slots.push(<span key={k} style={{ width: RAIL_W }} className="shrink-0" />);
-    }
-  }
-  return (
-    <span className="sticky left-0 z-10 flex h-full items-center bg-white" style={{ width: gutterPx }}>
-      <span className="shrink-0" style={{ width: GUTTER_PAD }} />
-      {slots}
-    </span>
-  );
-}
-
-function Rail({
-  node,
-  onToggle,
-  onNodeEnter,
-  chevron,
-  children,
-}: {
-  node: FoldNode;
-  onToggle: (id: string) => void;
-  onNodeEnter: (node: FoldNode) => void;
-  chevron?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle(node.id);
-      }}
-      onMouseEnter={() => onNodeEnter(node)}
-      className="group flex h-full shrink-0 items-center justify-center text-[9px] text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-      style={{ width: RAIL_W }}
-      title={`fold ${node.label}`}
-    >
-      {children || <span className="h-full w-px bg-slate-300 group-hover:bg-indigo-400" />}
-    </button>
-  );
+// A fixed-width sticky spacer so the data content aligns under the category header name (the
+// category's fold chevron lives in the header row). Chain/residue navigation is in the outline.
+function Gutter({ gutterPx }: { gutterPx: number }) {
+  return <span className="sticky left-0 z-10 h-full shrink-0 bg-white" style={{ width: gutterPx }} />;
 }
 
 function VerbatimContent({
@@ -549,29 +500,6 @@ function DataCell({
       }}
     >
       {value}
-    </button>
-  );
-}
-
-// A collapsed chain / residue / group summary. Rendered as a left-anchored navigation label
-// (NOT aligned to the data columns) so these "chain A · 238 residues" rows read as an outline
-// attached to the gutter rails, never mistaken for actual data values.
-function PlaceholderRow({
-  row,
-  onToggle,
-}: {
-  row: Extract<VisibleRow, { kind: "placeholder" }>;
-  onToggle: (id: string) => void;
-}) {
-  const click = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onToggle(row.node.id);
-  };
-  return (
-    <button onClick={click} className="flex items-center gap-1.5 pl-1 pr-4 text-left text-slate-500 hover:bg-slate-100">
-      <span className="select-none text-[9px] text-slate-400">▸</span>
-      <span className="truncate">{row.node.label}</span>
-      <span className="shrink-0 text-[10px] text-slate-400">… {row.hiddenCount.toLocaleString()} lines</span>
     </button>
   );
 }
