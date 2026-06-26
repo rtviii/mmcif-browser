@@ -196,32 +196,27 @@ Filter UX (a real control, not a search box — `CategoryFilter.tsx` already own
 - Watch toolbar width — it already crowds at narrow split widths; the richer control may want its own row
   or a popover rather than sitting inline (overflow-x scroll is out: it clips the filter dropdown).
 
+### Inspector navigation rework — split outline pane (done, branch `inspector-file-viewer`, commit `fcb7d76`)
+The Phase-5 ask (chain/residue navigation OFF the data columns, untouched data) is now addressed properly.
+The inspector's left panel is split into a persistent OUTLINE/TREE pane + a pristine source view, scroll-
+and selection-synced. The interleaved `▸ A ASN 2 … 8 lines` placeholder rows (and the redundant double-
+triangle) are gone.
+- New `lib/cif-source/outline.ts` (`flattenOutline` + `deepestVisibleNodeAt`) and `components/cif/OutlinePane.tsx`
+  — a virtualized document outline: every category, with `atom_site` (and the grouped categories) expandable
+  into chains → lazy residues. One chevron per node.
+- Source is pristine: `flatten.ts` folds only at the category level (dropped the `placeholder` `VisibleRow`
+  kind + chain/residue recursion); `SourceView.tsx` dropped the rail machinery (`PlaceholderRow`/`Rail`/gutter
+  slots, `maxDepth`, the "Collapse chains" button) for a fixed gutter spacer, and gained a `scrollToIndex`
+  imperative handle, an `onTopLineChange` scroll reporter, and a transient `highlightRange` flash. Identical in
+  table and regular mode.
+- `SourceInspector.tsx` is the sync hub: its own `outlineExpanded` state (`ensureChildren` on lazy expand);
+  hover → 3D (reuses `onNodeEnter`); click an outline node → force-expand its category in the source, scroll,
+  amber-flash, select; source scroll → deepest outline-visible node (guarded against feedback). `atom_site`
+  collapses by default so the source never dumps tens of thousands of atom lines — reach atoms via the outline
+  or the category header. Inner draggable outline|source split (no Mol* resize). Verified on 1cbs + 1aon
+  (58,870-row `atom_site`, 21 chains); typecheck clean, no console errors.
+
 ## Next
-
-### Inspector navigation gutter — rework (NEXT FOCUS)
-The original Phase-5 ask — move the chain/residue navigation OFF the data columns and "combine it with
-the gutter lines," keeping an untouched view of the data — is NOT meaningfully addressed yet. What shipped
-is cosmetic: collapsed chain/residue placeholders are muted and line numbers are gone, but the nav rows
-still render in the CONTENT column at the same left origin as the data — a flat, interleaved list of
-`▸ A ASN 2 … 8 lines` rows — rather than a real left navigation. (There's also a redundant double-triangle:
-the gutter fold-rail `▶` plus the `▸` marker added in `PlaceholderRow`.)
-
-Goal: the chain/residue tree should read as a genuine LEFT navigation region, visually separated from the
-data, so scanning `atom_site` shows clean, untouched data columns while the chain/residue outline lives on
-the left, anchored to the fold rails.
-
-Directions to weigh (decide with the user before building):
-- A persistent left outline/tree pane for `atom_site` (chains → residues), always showing the hierarchy,
-  scroll-/selection-synced with the data view on the right. Cleanest separation; bigger change (splits the
-  source panel into nav-tree + data-view).
-- Or widen the gutter into a true "navigation column" that holds the fold rails PLUS the collapsed
-  chain/residue labels as an indented outline (data columns begin to its right), so nav text never sits at
-  the data origin.
-- Either way: collapse the redundant `PlaceholderRow ▸` vs gutter `▶` into one control per nav node, and
-  keep "untouched data" as the hard constraint. Applies to BOTH table and regular mode.
-
-Touchpoints: `SourceView.tsx` (`Gutter`/`Rail`, `PlaceholderRow`, the row dispatch + `gutterPx`),
-`fold-tree.ts` (chain/residue nodes, `ensureChildren`), `flatten.ts` (`VisibleRow` kinds).
 
 ### Carried-over / deferred
 - Interaction map — deferred categories: `struct_site` / `struct_site_gen` (binding-site residues),
@@ -229,8 +224,9 @@ Touchpoints: `SourceView.tsx` (`Gutter`/`Rail`, `PlaceholderRow`, the row dispat
   (unit cell). Same `queryForLine` switch in `SourceInspector.tsx`.
 - Interaction map — extend hover to the fold-rail group nodes (entity / secondary-structure groups);
   decide whether an atom-row CLICK should focus the whole residue rather than the single atom.
-- Reverse 3D linkage: 3D hover/click → scroll + highlight the source row (use each fold node's
-  `rowStart`/`rowEnd`).
+- Reverse 3D linkage: 3D hover/click → scroll + highlight the source row AND select the matching outline
+  node. The plumbing now exists — `SourceView` exposes `scrollToIndex`, the outline has `scrollToIndex` +
+  `activeOutlineId`, and `deepestVisibleNodeAt` (in `outline.ts`) maps a line to its outline node.
 - Label-mode chain queries when a label chain spans multiple auth chains (auth mode is exact).
 - Whole-loop column alignment: cell widths are now fixed but still SAMPLED from the first ~60 rows
   (`SAMPLE_ROWS` in `table.ts`); a wide value past the sample can clip. (KV two-column tables: done.)
