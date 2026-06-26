@@ -70,17 +70,36 @@ the baseline is solid, so branch freely before starting the next batch.
     `buildEntityQuery`, struct_conf/struct_sheet_range → residue range, struct_conn →
     `buildBondQuery` (both partners), chem_comp → `buildComponentQuery` (all instances). Row index via
     `buildLineToRow` (`cif-source/table.ts`). Deferred: struct_site, assemblies, struct_asym, unit cell.
+  - Phase 5 — light-theme refit + table/nav/filter UX (same branch, 2026-06-26, UNCOMMITTED working
+    tree): full light theme scoped to the inspector (`.light-surface`, IBM Plex Mono/Sans), per-category
+    header rows (name + count, `∗` marks key-value categories), key-value categories as two-column tables
+    (`buildKeyValueTable`), dictionary definition moved to a 1s floating tooltip
+    (`HoverDefinitionTooltip` + `dict-lookup.ts`; `Definition.tsx` deleted), hidden scrollbars; fixed-
+    width table cells (columns no longer shift; long values are dotted-underline click-to-expand), one
+    fold arrow per category (header only), line numbers dropped, collapsed chain/residue placeholders
+    rendered as a muted left-anchored outline (not data columns), and "go to category" replaced by a
+    multi-value category/item filter (`CategoryFilter.tsx`, narrows the view). See ROADMAP Phase 5.
+  - Phase 6 — category lenses + filter presets (same branch, 2026-06-26, UNCOMMITTED): every category is
+    classified into human lenses (`lib/cif-source/classify.ts`, sourced from the dictionary's own
+    `Category.groups` + a `struct_*` override) so structural data is legible against deposition paperwork.
+    The filter (`CategoryFilter.tsx`) shows a preset panel on focus — lens chips (Structural | Context)
+    with in-file counts + hover blurbs, plus "Structural only" / "Hide deposition" / "Clear" — that
+    autopopulate it. Verified on 1cbs. See ROADMAP Phase 6 for the taxonomy.
 
 ## Where things live (app/src)
 
 - `lib/store.ts`, `lib/data.ts`, `lib/types.ts`, `lib/layout.ts` — dictionary explorer core.
 - `components/GraphExplorer.tsx`, `Sidebar.tsx`, etc. — Part A.
 - `lib/cif.ts` — Mol* CIF/BinaryCIF parse → category/field views.
-- `lib/cif-source/{segment,tokenize,fold-tree,flatten,types}.ts` — the inspector's source-view engine
-  (verbatim text → document model → fold tree → flattened virtual rows; `splitValues` for table cells;
-  `isPreamble`/`ensureChildren`/`MolCifFile` helpers).
-- `components/cif/{SourceInspector,SourceView,Definition}.tsx` — the inspector UI (orchestration,
-  virtualized renderer + rails + table cells, dictionary hover panel).
+- `lib/cif-source/{segment,tokenize,fold-tree,flatten,table,classify,types}.ts` — the inspector's
+  source-view engine (verbatim text → document model → fold tree → flattened virtual rows; `buildLoopTable`
+  / `buildKeyValueTable` / `buildLineToRow` for table cells; `classify.ts` = the category→lens taxonomy
+  (`lensesFor`/`buildLensGroups`); `isPreamble`/`ensureChildren`/`MolCifFile` helpers). `fold-tree.ts`
+  still holds `PREAMBLE_PREFIXES` (now redundant with `classify.ts`'s presets).
+- `components/cif/{SourceInspector,SourceView,CategoryFilter,HoverDefinitionTooltip,dict-lookup}.tsx`
+  — the inspector UI: orchestration; virtualized renderer + rails + header rows + table cells; the
+  multi-value category/item filter with lens presets; the floating 1s dictionary tooltip; the
+  dictionary-lookup join. (The old `Definition.tsx` bottom panel was removed in Phase 5.)
 - `components/CifInspector.tsx`, `app/inspector/page.tsx` — page shell: toolbar/file-load/PDB-fetch +
   the left source panel + the right `MolstarViewer`.
 - `lib/molstar/{viewer,spec,queries}.ts`, `hooks/useMolstarViewer.ts`, `components/MolstarViewer.tsx`
@@ -88,20 +107,29 @@ the baseline is solid, so branch freely before starting the next batch.
 
 ## Next task
 
-The whole 2026-06-25 feedback batch (file-viewer, Mol* look, UI/UX, interaction map v1) is DONE on
-branch `inspector-file-viewer` — see `inspector-next-work.md` + `mol-viewer-style-pref.md` for detail.
-Branch not yet merged to `main`. Remaining polish, when wanted:
+**Headline: rework the inspector navigation gutter — see ROADMAP "Next" (NEXT FOCUS).** The Phase-5 ask
+(move the chain/residue navigation off the data columns, combine it with the gutter lines, keep an
+untouched data view) was only addressed cosmetically: collapsed chain/residue placeholders are muted and
+line numbers are gone, but the nav rows still render in the content column at the data origin as a flat
+`▸ A ASN 2 … 8 lines` list, with a redundant double-triangle (gutter `▶` + `PlaceholderRow ▸`). The user
+wants a genuine LEFT navigation region (a persistent outline pane, or a widened nav-gutter holding the
+tree) separated from clean data. **Decide the direction with the user before building.** Touchpoints:
+`SourceView.tsx` (`Gutter`/`Rail`/`PlaceholderRow`/`gutterPx`), `fold-tree.ts` (chain/residue nodes),
+`flatten.ts`.
 
-- Extend the interaction map to the deferred categories: `struct_site`/`struct_site_gen` (binding-site
-  residues), `pdbx_struct_assembly`(`_gen`) (assembly transforms), `struct_asym`, cell/symmetry (unit
-  cell). Same `queryForLine` switch in `SourceInspector.tsx`.
-- Optional: extend hover to the fold-rail group nodes (entity / secondary-structure groups), and
-  reconsider whether atom-row CLICK should focus the residue rather than the single atom.
+Other deferred (ROADMAP "Carried-over"): interaction map for `struct_site`/assemblies/`struct_asym`/
+unit-cell; toolbar crowding at narrow splits; retire "Hide preamble" (redundant with the Phase-6 presets);
+`chem_comp_bond` lens tag (Ligands vs Bonds).
 
 ## Notes
 
 - `~/dev/fend_tubulinxyz` is the user's tubulin viewer and the SOURCE of our Mol* patterns; it's
   pre-indexed in Deepwiki. Use Deepwiki for its molstar styling/representation specifics.
-- Git: `main` is at `a60e4fe` (the inspector rework: `4fa1242` → `433dfce` → `a60e4fe`, on `cbf9fa4`
-  init). The file-viewer refinement batch lives on branch `inspector-file-viewer` off `a60e4fe`,
-  not yet merged. Start the next batch (Mol* look / UI / interaction map) off that branch.
+- Git: `main` is at `a60e4fe`. Branch `inspector-file-viewer` (off `a60e4fe`) holds the Phase 4 batch as
+  5 commits up to `523db7d`, then **Phase 5 (this session) is UNCOMMITTED in the working tree** — modified
+  `globals.css`, `layout.tsx`, `tailwind.config.ts`, `CifInspector.tsx`, `SourceInspector.tsx`,
+  `SourceView.tsx`, `cif-source/{flatten,fold-tree,table}.ts`; new `cif-source/classify.ts` +
+  `cif/{CategoryFilter,HoverDefinitionTooltip,dict-lookup}.tsx`; deleted `cif/Definition.tsx`; `ROADMAP.md`
+  staged. Nothing is merged to `main`. Commit Phase 5 (the user signs commits — `ssh-add` the key first if signing fails),
+  then continue off this branch. `.claude/launch.json` has `autoPort: true` (port 3000 was occupied during
+  dev); revert if you want it pinned.

@@ -16,7 +16,8 @@ export type FoldState = ReadonlySet<string>; // ids of COLLAPSED nodes
 
 export type VisibleRow =
   | { kind: "line"; lineIndex: number; ancestors: FoldNode[] }
-  | { kind: "placeholder"; node: FoldNode; hiddenCount: number; ancestors: FoldNode[] };
+  | { kind: "placeholder"; node: FoldNode; hiddenCount: number; ancestors: FoldNode[] }
+  | { kind: "header"; node: FoldNode; collapsed: boolean; summary: string; ancestors: FoldNode[] };
 
 export interface FlattenOpts {
   hiddenLines?: ReadonlySet<number>;
@@ -41,8 +42,18 @@ export function flattenVisible(
       const node = ni < list.length ? list[ni] : null;
       if (node && node.startLine === line) {
         ni++;
-        if (collapsed.has(node.id)) {
-          out.push({ kind: "placeholder", node, hiddenCount: node.endLine - node.startLine + 1, ancestors });
+        // Top-level category nodes get a header row: a block divider carrying the category
+        // name + count. Expanded -> the header is additive (content lines still follow it);
+        // collapsed -> the header REPLACES the usual placeholder (one clean collapsed header).
+        const isTopCat = ancestors.length === 0 && node.level === "category";
+        const isCollapsed = collapsed.has(node.id);
+        if (isTopCat) {
+          out.push({ kind: "header", node, collapsed: isCollapsed, summary: node.summary ?? "", ancestors });
+        }
+        if (isCollapsed) {
+          if (!isTopCat) {
+            out.push({ kind: "placeholder", node, hiddenCount: node.endLine - node.startLine + 1, ancestors });
+          }
         } else if (node.children && node.children.length) {
           walk(node.children, node.startLine, node.endLine, ancestors.concat(node));
         } else {

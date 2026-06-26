@@ -8,7 +8,7 @@
 // seen; the first line of each row is a "row start" the renderer turns into a table row,
 // the rest are continuation lines hidden in table mode.
 
-import type { CifDocument, LoopSpan } from "./segment";
+import type { CifDocument, KeyValueSpan, LoopSpan } from "./segment";
 import type { MolCifField, MolCifFile } from "./types";
 import { splitValues } from "./tokenize";
 
@@ -20,8 +20,43 @@ export interface LoopTable {
   widths: number[]; // per-column display width, in characters
 }
 
+export interface KeyValueItem {
+  attr: string;
+  lineIndex: number; // the `_cat.attr` declaration line
+  value: string; // parsed value (row 0), handles quoting / ;-multiline
+}
+
+export interface KeyValueTable {
+  items: KeyValueItem[]; // in source order
+  byLine: Map<number, KeyValueItem>; // declaration line -> item, for O(1) render lookup
+  itemWidth: number; // item-name column width, in characters
+  valueWidth: number; // value column width, in characters
+}
+
 const MAX_W = 28;
 const SAMPLE_ROWS = 60;
+
+// Two-column (item | value) model for a key-value category. Values come from Mol*'s parsed
+// fields (single-row category, row 0) so quoting and ;-multiline text resolve the same way
+// loop cells do. The category name itself is rendered separately as the block header.
+export function buildKeyValueTable(doc: CifDocument, span: KeyValueSpan, file: MolCifFile): KeyValueTable | null {
+  const cat = file.blocks[span.block]?.categories[span.category];
+  const items: KeyValueItem[] = [];
+  let itemW = 0;
+  let valW = 0;
+  for (const [attr, lineIndex] of Object.entries(span.itemLines)) {
+    const fld = cat?.getField(attr);
+    const value = fld ? fld.str(0) : "";
+    items.push({ attr, lineIndex, value });
+    if (attr.length > itemW) itemW = attr.length;
+    const firstLineLen = value.includes("\n") ? value.indexOf("\n") : value.length;
+    if (firstLineLen > valW) valW = Math.min(MAX_W, firstLineLen);
+  }
+  if (!items.length) return null;
+  items.sort((a, b) => a.lineIndex - b.lineIndex);
+  const byLine = new Map<number, KeyValueItem>(items.map((it) => [it.lineIndex, it]));
+  return { items, byLine, itemWidth: Math.min(itemW, MAX_W), valueWidth: valW };
+}
 
 export function buildLoopTable(doc: CifDocument, span: LoopSpan, file: MolCifFile): LoopTable | null {
   if (span.dataStart < 0) return null;

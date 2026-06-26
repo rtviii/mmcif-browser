@@ -25,6 +25,8 @@ export interface FoldNode {
   lazy?: boolean; // children not computed yet (atom_site chains)
   block?: number; // internal: which data block (for lazy residue computation)
   key?: string; // internal: the grouping value (e.g. chain id)
+  spanKind?: "loop" | "kv"; // category nodes only: which span shape produced this
+  summary?: string; // category nodes only: short count, e.g. "13 rows" / "8 items"
 }
 
 export interface FoldCtx {
@@ -185,6 +187,8 @@ function categoryNode(span: CifDocument["spans"][number], file: MolCifFile, mode
       endLine: span.end,
       rowStart: 0,
       rowEnd: 0,
+      spanKind: "kv",
+      summary: `${items} item${items === 1 ? "" : "s"}`,
     };
   }
   const cat = file.blocks[span.block]?.categories[span.category];
@@ -200,6 +204,8 @@ function categoryNode(span: CifDocument["spans"][number], file: MolCifFile, mode
     rowStart: 0,
     rowEnd: Math.max(0, rowCount - 1),
     block: span.block,
+    spanKind: "loop",
+    summary: `${fmt(rowCount)} row${rowCount === 1 ? "" : "s"}`,
   };
   const oneLinePerRow = !!cat && span.dataStart >= 0 && span.dataLineCount === rowCount;
   const handler = HANDLERS[span.category];

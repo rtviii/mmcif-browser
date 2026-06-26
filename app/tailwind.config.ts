@@ -5,7 +5,8 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        sans: ["var(--font-ibm-plex-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["var(--font-ibm-plex-mono)", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
     },
   },

@@ -14,6 +14,20 @@ body {
   color: #e5e5e5;
 }
 
+/* Inspector light surface (scoped; the dictionary-graph page stays dark). */
+.light-surface {
+  color-scheme: light;
+}
+
+/* Fully hidden scrollbars; content stays scrollable by wheel/trackpad. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* React Flow attribution / theming tweaks */
 .react-flow__controls-button {
   background: #27272a;

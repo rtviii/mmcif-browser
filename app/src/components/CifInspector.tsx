@@ -101,7 +101,7 @@ export default function CifInspector() {
 
   return (
     <div
-      className="flex h-full flex-col"
+      className="light-surface flex h-full flex-col bg-white text-slate-700"
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -115,8 +115,8 @@ export default function CifInspector() {
       }}
     >
       {/* toolbar */}
-      <div className="flex h-11 shrink-0 items-center gap-3 border-b border-neutral-800 px-3 text-xs">
-        <label className="cursor-pointer rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-neutral-200 hover:bg-neutral-800">
+      <div className="flex h-11 shrink-0 items-center gap-3 border-b border-slate-200 px-3 text-xs">
+        <label className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-1 text-slate-700 hover:bg-slate-50">
           Open file
           <input
             type="file"
@@ -125,23 +125,23 @@ export default function CifInspector() {
             onChange={(e) => e.target.files?.[0] && loadFile(e.target.files[0])}
           />
         </label>
-        <span className="text-neutral-600">or</span>
+        <span className="text-slate-400">or</span>
         <input
           value={pdbId}
           onChange={(e) => setPdbId(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && loadPdb()}
           placeholder="PDB ID (e.g. 1cbs)"
-          className="w-36 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-neutral-100 placeholder-neutral-600 outline-none focus:border-sky-600"
+          className="w-36 rounded border border-slate-300 bg-white px-2 py-1 text-slate-800 placeholder-slate-400 outline-none focus:border-indigo-500"
         />
         <button
           onClick={loadPdb}
-          className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-neutral-200 hover:bg-neutral-800"
+          className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700 hover:bg-slate-50"
         >
           Fetch
         </button>
-        {file && <span className="font-mono text-neutral-400">{file.name}</span>}
+        {file && <span className="font-mono text-slate-500">{file.name}</span>}
         {block && (
-          <span className="text-neutral-600">
+          <span className="text-slate-400">
             data_{block.header} · {block.categories.length} categories
           </span>
         )}
@@ -149,7 +149,7 @@ export default function CifInspector() {
           <select
             value={blockIndex}
             onChange={(e) => setBlockIndex(Number(e.target.value))}
-            className="rounded border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-neutral-200"
+            className="rounded border border-slate-300 bg-white px-1 py-0.5 text-slate-700"
           >
             {parsed.blocks.map((b, i) => (
               <option key={i} value={i}>
@@ -158,17 +158,17 @@ export default function CifInspector() {
             ))}
           </select>
         )}
-        {loading && <span className="text-neutral-500">loading…</span>}
-        {error && <span className="text-rose-400">{error}</span>}
+        {loading && <span className="text-slate-500">loading…</span>}
+        {error && <span className="text-rose-600">{error}</span>}
       </div>
 
       {/* body */}
       <div ref={splitRef} className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-col border-r border-neutral-800" style={{ width: `${leftPct}%` }}>
+        <div className="flex min-w-0 flex-col border-r border-slate-200" style={{ width: `${leftPct}%` }}>
           {!block ? (
             <div
               className={`m-3 flex flex-1 items-center justify-center rounded border border-dashed text-center text-xs ${
-                dragOver ? "border-sky-600 text-sky-400" : "border-neutral-800 text-neutral-600"
+                dragOver ? "border-indigo-400 text-indigo-600" : "border-slate-300 text-slate-400"
               }`}
             >
               Drop a .cif / .mmcif / .bcif file here,
@@ -183,7 +183,7 @@ export default function CifInspector() {
         <div
           onMouseDown={startDrag}
           title="drag to resize"
-          className="w-1 shrink-0 cursor-col-resize bg-neutral-800 transition-colors hover:bg-sky-600"
+          className="w-1 shrink-0 cursor-col-resize bg-slate-200 transition-colors hover:bg-indigo-400"
         />
 
         <div className="min-w-0 flex-1 bg-white">

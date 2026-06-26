@@ -10,7 +10,13 @@ import {
   isPreamble,
 } from "@/lib/cif-source/fold-tree";
 import { segmentDocument } from "@/lib/cif-source/segment";
-import { buildLineToRow, buildLoopTable, type LoopTable } from "@/lib/cif-source/table";
+import {
+  buildKeyValueTable,
+  buildLineToRow,
+  buildLoopTable,
+  type KeyValueTable,
+  type LoopTable,
+} from "@/lib/cif-source/table";
 import { asMolCifFile, type MolCifCategory } from "@/lib/cif-source/types";
 import type { MolstarViewer } from "@/lib/molstar/viewer";
 import {
@@ -22,7 +28,9 @@ import {
   buildResidueQuery,
   executeQuery,
 } from "@/lib/molstar/queries";
-import { Definition, type HoverTarget } from "./Definition";
+import { type FilterEntry } from "./CategoryFilter";
+import { type HoverTarget } from "./dict-lookup";
+import { HoverDefinitionTooltip } from "./HoverDefinitionTooltip";
 import SourceView, { type ViewOptions } from "./SourceView";
 
 interface LoadedFile {
@@ -46,9 +54,11 @@ export default function SourceInspector({
   const [mode, setMode] = useState<HierarchyMode>("auth");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [hover, setHover] = useState<HoverTarget>(null);
+  const [hoverAnchor, setHoverAnchor] = useState<{ x: number; y: number } | null>(null);
   const [hideNoise, setHideNoise] = useState(false);
   const [collapsePreamble, setCollapsePreamble] = useState(false);
   const [tableMode, setTableMode] = useState(false);
+  const [filter, setFilter] = useState<FilterEntry[]>([]);
 
   const isText = !!file && !file.binary;
 
@@ -91,6 +101,20 @@ export default function SourceInspector({
     return m;
   }, [doc, parsed, tableMode]);
 
+  // Per-key-value-category two-column (item | value) table model. Like tableModel, only built
+  // in table mode so non-table mode pays nothing.
+  const kvTableModel = useMemo(() => {
+    const m = new Map<number, KeyValueTable>();
+    if (!doc || !parsed || !tableMode) return m;
+    const file = asMolCifFile(parsed.raw);
+    doc.spans.forEach((span, si) => {
+      if (span.kind !== "kv") return;
+      const t = buildKeyValueTable(doc, span, file);
+      if (t) m.set(si, t);
+    });
+    return m;
+  }, [doc, parsed, tableMode]);
+
   // Per-loop line -> parsed row index, for the non-atom_site categories the 3D interaction
   // resolver targets (atom_site uses a direct offset and is excluded to avoid 58k-entry maps).
   const rowMaps = useMemo(() => {
@@ -118,7 +142,15 @@ export default function SourceInspector({
     }
     for (let si = 0; si < doc.spans.length; si++) {
       const s = doc.spans[si];
-      if (s.kind !== "loop") continue;
+      if (s.kind === "kv") {
+        // In table mode, kv categories render as item|value tables keyed off the declaration
+        // lines; hide ;-multiline continuation lines (their content lives in the value cell).
+        if (tableMode) {
+          const declSet = new Set(Object.values(s.itemLines));
+          for (let ln = s.start; ln <= s.end; ln++) if (!declSet.has(ln)) set.add(ln);
+        }
+        continue;
+      }
       // hide loop_ unless table mode is using it as the column-header row
       if (hideNoise && !tableMode) set.add(s.loopKeywordLine);
       if (tableMode) {
@@ -134,6 +166,17 @@ export default function SourceInspector({
     () => (doc && tree ? flattenVisible(doc, tree, collapsed, { hiddenLines }) : []),
     [doc, tree, collapsed, hiddenLines],
   );
+
+  // Category/item filter: when non-empty, keep only rows belonging to the selected categories
+  // (gap/preamble lines, which map to no span, drop out). An item filters to its category.
+  const filterCats = useMemo(() => new Set(filter.map((f) => f.category)), [filter]);
+  const visibleShown = useMemo(() => {
+    if (!filterCats.size || !doc) return visible;
+    return visible.filter((r) => {
+      const cat = r.kind === "line" ? doc.spans[doc.lineToSpan[r.lineIndex]]?.category : r.node.category;
+      return cat != null && filterCats.has(cat);
+    });
+  }, [visible, filterCats, doc]);
 
   // Number of fold-rail slots: category (1), + chain (2), + residue (3) where present.
   const maxDepth = useMemo(() => {
@@ -387,11 +430,12 @@ export default function SourceInspector({
       {isText && doc && tree ? (
         <SourceView
           doc={doc}
-          visible={visible}
+          visible={visibleShown}
           mode={mode}
           viewOptions={viewOptions}
           maxDepth={maxDepth}
           tableModel={tableModel}
+          kvTableModel={kvTableModel}
           onModeChange={setMode}
           onToggleNoise={() => setHideNoise((v) => !v)}
           onToggleTable={() => setTableMode((v) => !v)}
@@ -400,7 +444,16 @@ export default function SourceInspector({
           onCollapseChains={onCollapseChains}
           allExpanded={collapsed.size === 0}
           onToggleExpandAll={onToggleExpandAll}
-          onHoverItem={(cat, field) => setHover({ kind: "item", cat, field })}
+          filter={filter}
+          onFilterChange={setFilter}
+          onHoverItem={(cat, field, e) => {
+            setHover({ kind: "item", cat, field });
+            setHoverAnchor({ x: e.clientX, y: e.clientY });
+          }}
+          onHoverCategory={(cat, e) => {
+            setHover({ kind: "category", cat });
+            setHoverAnchor({ x: e.clientX, y: e.clientY });
+          }}
           onClearHover={() => setHover(null)}
           onRowEnter={onRowEnter}
           onNodeEnter={onNodeEnter}
@@ -408,13 +461,13 @@ export default function SourceInspector({
           onRowClick={onRowClick}
         />
       ) : (
-        <div className="flex min-h-0 flex-1 items-center justify-center p-4 text-center text-[11px] text-neutral-600">
+        <div className="flex min-h-0 flex-1 items-center justify-center p-4 text-center text-[11px] text-slate-400">
           {file?.binary
             ? "Source view needs text mmCIF. This is BinaryCIF — open the .cif to inspect the source. The 3D view still works."
             : "Parsing…"}
         </div>
       )}
-      <Definition hover={hover} />
+      <HoverDefinitionTooltip hover={hover} anchor={hoverAnchor} />
     </div>
   );
 }
