@@ -15,6 +15,7 @@ import {
 } from "@/lib/cif-source/classify";
 import { useStore } from "@/lib/store";
 import { CategoryFilter, type FilterEntry } from "./CategoryFilter";
+import { ViewMenu } from "./ViewMenu";
 
 const NUMERIC = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
 
@@ -67,6 +68,7 @@ export interface SourceViewProps {
   onToggle: (id: string) => void;
   allExpanded: boolean;
   onToggleExpandAll: () => void;
+  preambleCategories: string[];
   filter: FilterEntry[];
   onFilterChange: (f: FilterEntry[]) => void;
   onHoverItem: (cat: string, field: string, e: React.MouseEvent) => void;
@@ -77,9 +79,17 @@ export interface SourceViewProps {
   onNodeEnter: (node: FoldNode) => void;
   onStructLeave: () => void;
   onRowClick: (lineIndex: number) => void;
+  onHeaderClick?: (node: FoldNode) => void;
   // Outline sync: report the top visible source line on scroll; flash a line range on click-to.
   onTopLineChange?: (lineIndex: number) => void;
   highlightRange?: { start: number; end: number } | null;
+  // Persistent pin: highlight the pinned line range / category header; chip for jump-back + clear.
+  pinnedRange?: { start: number; end: number } | null;
+  pinnedHeaderId?: string | null;
+  pinnedLabel?: string | null;
+  onPinJump?: () => void;
+  onPinClear?: () => void;
+  onPinReferences?: () => void; // open the dig-deeper reference panel for the pinned row
 }
 
 const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function SourceView(props, ref) {
@@ -178,31 +188,21 @@ const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function Source
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-slate-200 px-2 text-[11px]">
-        <div className="flex overflow-hidden rounded border border-slate-300">
-          {(["auth", "label"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => props.onModeChange(m)}
-              className={`px-2 py-0.5 font-mono ${
-                mode === m ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
-              }`}
-            >
-              {m}_*
-            </button>
-          ))}
-        </div>
-        <Toggle on={viewOptions.collapsePreamble} onClick={props.onTogglePreamble}>
-          Hide preamble
-        </Toggle>
-        <Toggle on={viewOptions.hideNoise} onClick={props.onToggleNoise}>
-          Hide noise
-        </Toggle>
+        <ViewMenu
+          mode={mode}
+          onModeChange={props.onModeChange}
+          collapsePreamble={viewOptions.collapsePreamble}
+          onTogglePreamble={props.onTogglePreamble}
+          hideNoise={viewOptions.hideNoise}
+          onToggleNoise={props.onToggleNoise}
+          preambleCategories={props.preambleCategories}
+        />
         <Toggle on={viewOptions.tableMode} onClick={props.onToggleTable}>
           Table
         </Toggle>
         <button
           onClick={props.onToggleExpandAll}
-          className="rounded border border-slate-300 bg-white px-2 py-0.5 text-slate-700 hover:bg-slate-50"
+          className="shrink-0 whitespace-nowrap rounded border border-slate-300 bg-white px-2 py-0.5 text-slate-700 hover:bg-slate-50"
         >
           {props.allExpanded ? "Collapse all" : "Expand all"}
         </button>
@@ -213,8 +213,37 @@ const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function Source
           onChange={props.onFilterChange}
           presets={presets}
         />
-        <span className="ml-auto font-mono text-slate-400">{visible.length.toLocaleString()} rows</span>
+        <span className="ml-auto shrink-0 font-mono text-slate-400">{visible.length.toLocaleString()} rows</span>
       </div>
+
+      {props.pinnedLabel && (
+        <div className="flex h-6 shrink-0 items-center gap-2 border-b border-indigo-200 bg-indigo-50/70 px-2 text-[11px]">
+          <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide text-indigo-400">pinned</span>
+          <button
+            onClick={props.onPinJump}
+            title="scroll to the pinned row"
+            className="min-w-0 flex-1 truncate text-left font-mono text-indigo-700 hover:underline"
+          >
+            {props.pinnedLabel}
+          </button>
+          {props.onPinReferences && (
+            <button
+              onClick={props.onPinReferences}
+              title="references — what this row links to / what links to it"
+              className="shrink-0 rounded px-1 font-mono text-indigo-500 hover:bg-indigo-100 hover:text-indigo-700"
+            >
+              ⧉ references
+            </button>
+          )}
+          <button
+            onClick={props.onPinClear}
+            title="unpin (Esc)"
+            className="shrink-0 rounded px-1 text-indigo-500 hover:bg-indigo-100 hover:text-indigo-700"
+          >
+            × unpin
+          </button>
+        </div>
+      )}
 
       <div
         ref={parentRef}
@@ -231,14 +260,27 @@ const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function Source
               props.highlightRange != null &&
               row.lineIndex >= props.highlightRange.start &&
               row.lineIndex <= props.highlightRange.end;
+            const pinned =
+              row.kind === "line"
+                ? props.pinnedRange != null &&
+                  row.lineIndex >= props.pinnedRange.start &&
+                  row.lineIndex <= props.pinnedRange.end
+                : props.pinnedHeaderId != null && row.node.id === props.pinnedHeaderId;
+            const rowBg = highlighted
+              ? "bg-amber-100"
+              : pinned
+                ? "bg-indigo-50 shadow-[inset_3px_0_0_0_#6366f1]"
+                : "hover:bg-slate-50";
             return (
               <div
                 key={vi.key}
-                className={`absolute left-0 flex items-center ${highlighted ? "bg-amber-100" : "hover:bg-slate-50"}`}
+                className={`absolute left-0 flex items-center ${rowBg}`}
                 style={{ top: 0, height: vi.size, transform: `translateY(${vi.start}px)`, width: contentWidth }}
                 onMouseEnter={enter}
                 onMouseLeave={props.onStructLeave}
-                onClick={row.kind === "line" ? () => props.onRowClick(row.lineIndex) : undefined}
+                onClick={
+                  row.kind === "line" ? () => props.onRowClick(row.lineIndex) : () => props.onHeaderClick?.(row.node)
+                }
               >
                 {row.kind === "header" ? (
                   <HeaderRow
@@ -299,7 +341,7 @@ function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; c
   return (
     <button
       onClick={onClick}
-      className={`rounded border px-2 py-0.5 ${
+      className={`shrink-0 whitespace-nowrap rounded border px-2 py-0.5 ${
         on
           ? "border-indigo-500 bg-indigo-50 text-indigo-700"
           : "border-slate-300 bg-white text-slate-500 hover:bg-slate-50"

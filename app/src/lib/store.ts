@@ -1,5 +1,6 @@
 import MiniSearch from "minisearch";
 import { create } from "zustand";
+import type { HoverTarget } from "@/components/cif/dict-lookup";
 import { loadData } from "./data";
 import type { Dictionary, GraphData, GraphEdge, GraphNode } from "./types";
 
@@ -16,12 +17,27 @@ interface Adjacency {
   in: Map<string, GraphEdge[]>; // this category -> edges where it is the target (referenced by others)
 }
 
+// Non-null mmCIF target (category or item) — same shape MmcifChip uses, kept here to avoid a
+// store <-> component import cycle.
+export type RefTarget = NonNullable<HoverTarget>;
+// A specific row in a parsed block, for instance-level reference joins.
+export interface RefInstance {
+  blockIndex: number;
+  category: string;
+  rowIndex: number;
+}
+export interface RefPanelState {
+  target: RefTarget;
+  instance?: RefInstance;
+}
+
 interface State {
   loaded: boolean;
   dict: Dictionary | null;
   graph: GraphData | null;
   nodeIndex: Map<string, GraphNode>;
   adj: Adjacency;
+  itemChildren: Map<string, string[]>; // parent item -> child items[] (inverse of Item.parents)
   search: MiniSearch | null;
 
   visible: string[]; // category ids currently on the canvas
@@ -29,6 +45,21 @@ interface State {
   hovered: string | null; // hovered category id
   center: string | null; // stable layout root (set by focus/search, not by clicks)
   layoutDir: "LR" | "TB";
+
+  // Shared dictionary-definition tooltip: any mmCIF category/item element (MmcifChip,
+  // source-view tokens, filter rows) sets this on hover; one tooltip at the app root renders it.
+  hoverDef: HoverTarget;
+  hoverAnchor: { x: number; y: number } | null;
+  setHoverDef: (target: HoverTarget, anchor: { x: number; y: number }) => void;
+  clearHoverDef: () => void; // immediate clear
+  scheduleClearHoverDef: () => void; // clear after a short grace period (lets the pointer reach the tooltip)
+  cancelClearHoverDef: () => void; // cancel a pending grace clear (pointer entered the tooltip)
+
+  // Dig-deeper reference panel (schema mode = target only; instance mode adds a row context).
+  refPanel: RefPanelState | null;
+  openRefPanel: (target: RefTarget, instance?: RefInstance) => void;
+  closeRefPanel: () => void;
+  setRefTarget: (target: RefTarget) => void; // re-center the open panel without closing it
 
   init: () => Promise<void>;
   show: (id: string) => void;
@@ -55,12 +86,29 @@ function buildAdjacency(graph: GraphData): Adjacency {
   return { out, in: inn };
 }
 
+// Inverse of dictionary Item.parents: parent item name -> the child item names that point at it.
+// Powers reverse ("referenced by") lookups for the dig-deeper panel.
+function buildItemChildren(dict: Dictionary): Map<string, string[]> {
+  const m = new Map<string, string[]>();
+  for (const it of Object.values(dict.items)) {
+    for (const p of it.parents ?? []) {
+      (m.get(p) ?? m.set(p, []).get(p)!).push(it.name);
+    }
+  }
+  return m;
+}
+
+// Transient timer for the hover-tooltip grace period — kept out of state so it never re-renders.
+let hoverClearTimer: ReturnType<typeof setTimeout> | null = null;
+const HOVER_CLEAR_GRACE_MS = 180;
+
 export const useStore = create<State>((set, get) => ({
   loaded: false,
   dict: null,
   graph: null,
   nodeIndex: new Map(),
   adj: { out: new Map(), in: new Map() },
+  itemChildren: new Map(),
   search: null,
   visible: [],
   selected: null,
@@ -68,11 +116,47 @@ export const useStore = create<State>((set, get) => ({
   center: null,
   layoutDir: "LR",
 
+  hoverDef: null,
+  hoverAnchor: null,
+  setHoverDef: (target, anchor) => {
+    if (hoverClearTimer) {
+      clearTimeout(hoverClearTimer);
+      hoverClearTimer = null;
+    }
+    set({ hoverDef: target, hoverAnchor: anchor });
+  },
+  clearHoverDef: () => {
+    if (hoverClearTimer) {
+      clearTimeout(hoverClearTimer);
+      hoverClearTimer = null;
+    }
+    set({ hoverDef: null });
+  },
+  scheduleClearHoverDef: () => {
+    if (hoverClearTimer) clearTimeout(hoverClearTimer);
+    hoverClearTimer = setTimeout(() => {
+      hoverClearTimer = null;
+      set({ hoverDef: null });
+    }, HOVER_CLEAR_GRACE_MS);
+  },
+  cancelClearHoverDef: () => {
+    if (hoverClearTimer) {
+      clearTimeout(hoverClearTimer);
+      hoverClearTimer = null;
+    }
+  },
+
+  refPanel: null,
+  openRefPanel: (target, instance) => set({ refPanel: { target, instance } }),
+  closeRefPanel: () => set({ refPanel: null }),
+  setRefTarget: (target) => set({ refPanel: { target } }),
+
   init: async () => {
     if (get().loaded) return;
     const { dict, graph } = await loadData();
     const nodeIndex = new Map(graph.nodes.map((n) => [n.id, n]));
     const adj = buildAdjacency(graph);
+    const itemChildren = buildItemChildren(dict);
 
     const search = new MiniSearch<SearchHit>({
       fields: ["label", "description"],
@@ -88,7 +172,7 @@ export const useStore = create<State>((set, get) => ({
     }
     search.addAll(docs);
 
-    set({ loaded: true, dict, graph, nodeIndex, adj, search });
+    set({ loaded: true, dict, graph, nodeIndex, adj, itemChildren, search });
     // seed with a useful starter: atom_site + the categories it references (out-links only,
     // ~13 — compact). Full in+out expansion stays an explicit user action.
     get().focus("atom_site");

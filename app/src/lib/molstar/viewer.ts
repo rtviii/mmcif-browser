@@ -11,6 +11,8 @@ import { renderReact18 } from "molstar/lib/mol-plugin-ui/react18";
 import { PluginUISpec } from "molstar/lib/mol-plugin-ui/spec";
 import { PluginCommands } from "molstar/lib/mol-plugin/commands";
 import { StateSelection } from "molstar/lib/mol-state";
+import type { Color } from "molstar/lib/mol-util/color";
+import { LabelManager } from "./labels";
 import { viewerSpec } from "./spec";
 import { BALL_AND_STICK_COMPONENTS, STYLIZED_POSTPROCESSING, WHITE_BACKGROUND } from "./style";
 
@@ -29,6 +31,7 @@ export interface PickInfo {
 export class MolstarViewer {
   ctx: PluginUIContext | null = null;
   private initPromise: Promise<void> | null = null;
+  private labelManager: LabelManager | null = null;
 
   async init(container: HTMLElement, spec: PluginUISpec = viewerSpec): Promise<void> {
     if (this.ctx) return;
@@ -50,6 +53,9 @@ export class MolstarViewer {
     this.ctx.canvas3d?.setProps({
       postprocessing: STYLIZED_POSTPROCESSING,
       renderer: { backgroundColor: WHITE_BACKGROUND },
+      // Never let an implicit scene change (e.g. adding a representation) auto-refit the camera.
+      // The camera only moves on the explicit resetCamera() after load and focusLoci() on pin.
+      camera: { manualReset: true },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
     this.ctx.managers.structure.component.setOptions({
@@ -175,6 +181,33 @@ export class MolstarViewer {
     this.ctx?.managers.structure.selection.fromLoci("add", loci);
   }
 
+  // --- in-scene labels (tethered text anchored to a loci) ---
+
+  private ensureLabelManager(): LabelManager | null {
+    if (this.labelManager) return this.labelManager;
+    if (!this.ctx) return null;
+    this.labelManager = new LabelManager(this.ctx);
+    return this.labelManager;
+  }
+
+  showHoverLabel(loci: StructureElement.Loci, text: string, color?: Color): void {
+    const m = this.ensureLabelManager();
+    if (m) void m.showHover(loci, text, color);
+  }
+
+  hideHoverLabel(): void {
+    this.labelManager?.hideHover();
+  }
+
+  addPersistentLabel(key: string, loci: StructureElement.Loci, text: string, color?: Color): void {
+    const m = this.ensureLabelManager();
+    if (m) void m.addPersistent(key, loci, text, color);
+  }
+
+  removePersistentLabel(key: string): void {
+    this.labelManager?.removePersistent(key);
+  }
+
   // --- interaction events ---
 
   subscribeToHover(callback: (info: PickInfo | null) => void): () => void {
@@ -221,6 +254,8 @@ export class MolstarViewer {
   }
 
   dispose(): void {
+    this.labelManager?.dispose();
+    this.labelManager = null;
     this.ctx?.dispose();
     this.ctx = null;
     this.initPromise = null;

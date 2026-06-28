@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { MmcifChip } from "./MmcifChip";
 
-// A multi-value filter over the source view: pick any categories and/or items; the view is
-// narrowed to those categories (an item resolves to — and is shown under — its category).
-// Empty selection means no filtering. Searchable; categories and items are styled distinctly.
-// On focus it also surfaces "lens" presets (groups of categories by interpretation) that
-// autopopulate the filter — see classify.ts / the `presets` prop.
+// The filter / lenses control. A button opens a real panel (not a cramped input): the eight
+// interpretation "lenses" as collapsible clusters you can expand to inspect and toggle the exact
+// categories they hold (each row is the shared MmcifChip, so hovering shows the dictionary
+// definition). Searching switches to a flat category/item result list. Selection narrows the
+// source view to the chosen categories (an item resolves to its category).
 
 export type FilterEntry = { kind: "category" | "item"; category: string; label: string };
 
@@ -25,7 +26,8 @@ export interface FilterPresets {
 
 const key = (e: { kind: string; label: string }) => `${e.kind}:${e.label}`;
 const catEntry = (c: string): FilterEntry => ({ kind: "category", category: c, label: c });
-const MAX_OPTS = 40;
+const itemEntry = (label: string, category: string): FilterEntry => ({ kind: "item", category, label });
+const MAX_OPTS = 60;
 
 export function CategoryFilter({
   categories,
@@ -40,18 +42,23 @@ export function CategoryFilter({
   onChange: (next: FilterEntry[]) => void;
   presets?: FilterPresets;
 }) {
-  const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
-  const [hoverBlurb, setHoverBlurb] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set()); // expanded lens cluster ids
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     const onDoc = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
+    window.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDoc);
+    };
   }, [open]);
 
   const selectedKeys = useMemo(() => new Set(selected.map(key)), [selected]);
@@ -59,22 +66,20 @@ export function CategoryFilter({
     () => new Set(selected.filter((s) => s.kind === "category").map((s) => s.label)),
     [selected],
   );
+
   const q = query.trim().toLowerCase();
   const catOpts = categories
-    .filter((c) => !selectedKeys.has(`category:${c}`) && c.toLowerCase().includes(q))
+    .filter((c) => c.toLowerCase().includes(q))
     .slice(0, MAX_OPTS);
-  const itemOpts = items
-    .filter((it) => !selectedKeys.has(`item:${it.label}`) && it.label.toLowerCase().includes(q))
-    .slice(0, MAX_OPTS);
+  const itemOpts = items.filter((it) => it.label.toLowerCase().includes(q)).slice(0, MAX_OPTS);
 
-  const add = (e: FilterEntry) => {
-    if (!selectedKeys.has(key(e))) onChange([...selected, e]);
-    setQuery("");
-  };
+  const toggleEntry = (e: FilterEntry) =>
+    onChange(selectedKeys.has(key(e)) ? selected.filter((s) => key(s) !== key(e)) : [...selected, e]);
   const remove = (k: string) => onChange(selected.filter((s) => key(s) !== k));
 
-  // Preset actions over category chips (item chips are left untouched).
+  // Lens cluster actions over category chips (item chips are left untouched).
   const lensActive = (cats: string[]) => cats.length > 0 && cats.every((c) => selectedCats.has(c));
+  const lensSome = (cats: string[]) => cats.some((c) => selectedCats.has(c));
   const toggleCats = (cats: string[]) => {
     if (lensActive(cats)) {
       const drop = new Set(cats);
@@ -85,178 +90,261 @@ export function CategoryFilter({
     }
   };
   const setCats = (cats: string[]) => onChange(cats.map(catEntry));
+  const toggleExpand = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
-  const showPresets = open && presets && !q;
-  const showResults = open && (q.length > 0 || !presets) && (catOpts.length > 0 || itemOpts.length > 0);
+  const structural = presets?.lenses.filter((l) => l.tier === "structural") ?? [];
+  const context = presets?.lenses.filter((l) => l.tier === "context") ?? [];
 
   return (
     <div ref={ref} className="relative">
-      <div
-        className="flex max-w-[320px] items-center gap-1 overflow-x-auto rounded border border-slate-300 bg-white px-1 py-0.5 no-scrollbar focus-within:border-indigo-500"
-        onClick={() => setOpen(true)}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`flex shrink-0 items-center gap-1 whitespace-nowrap rounded border px-2 py-0.5 ${
+          open || selected.length
+            ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+            : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+        }`}
       >
-        {selected.map((s) => (
-          <span
-            key={key(s)}
-            className={`flex shrink-0 items-center gap-0.5 rounded px-1 text-[10px] ${
-              s.kind === "category" ? "bg-indigo-50 text-indigo-700" : "bg-slate-100 text-slate-600"
-            }`}
-            title={s.kind === "item" ? `item — filters to ${s.category}` : "category"}
-          >
-            <span className="max-w-[140px] truncate font-mono">{s.label}</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                remove(key(s));
-              }}
-              className="text-slate-400 hover:text-slate-700"
-            >
-              ×
-            </button>
+        Filter / lenses
+        {selected.length > 0 && (
+          <span className="rounded-full bg-indigo-600 px-1 text-[9px] leading-tight text-white">
+            {selected.length}
           </span>
-        ))}
-        <input
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={(e) => {
-            if (e.key === "Backspace" && !query && selected.length) remove(key(selected[selected.length - 1]));
-            if (e.key === "Escape") setOpen(false);
-          }}
-          placeholder={selected.length ? "" : "filter / lenses…"}
-          className="min-w-[90px] flex-1 bg-transparent px-1 py-0.5 text-[11px] text-slate-700 placeholder-slate-400 outline-none"
-        />
-      </div>
+        )}
+        <span className="text-[8px] text-slate-400">▼</span>
+      </button>
 
-      {(showPresets || showResults) && (
-        <div className="absolute left-0 top-full z-50 mt-1 max-h-80 w-80 overflow-auto rounded border border-slate-200 bg-white text-[11px] shadow-lg no-scrollbar">
-          {showPresets && (
-            <div className="border-b border-slate-100 px-2 py-1.5">
-              <PresetGroup
-                title="Structural"
-                lenses={presets!.lenses.filter((l) => l.tier === "structural")}
-                lensActive={lensActive}
-                toggleCats={toggleCats}
-                setHoverBlurb={setHoverBlurb}
-              />
-              <PresetGroup
-                title="Context"
-                lenses={presets!.lenses.filter((l) => l.tier === "context")}
-                lensActive={lensActive}
-                toggleCats={toggleCats}
-                setHoverBlurb={setHoverBlurb}
-              />
-              <div className="mt-2 flex flex-wrap items-center gap-1">
-                <button
-                  onClick={() => setCats(presets!.structuralOnly)}
-                  onMouseEnter={() => setHoverBlurb("Show only the structural lenses — hide all deposition / method paperwork.")}
-                  onMouseLeave={() => setHoverBlurb(null)}
-                  className="rounded border border-teal-600/40 bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-800 hover:bg-teal-100"
-                >
-                  Structural only
-                </button>
-                <button
-                  onClick={() => setCats(presets!.hideDeposition)}
-                  onMouseEnter={() => setHoverBlurb("Keep everything except categories that are purely deposition metadata.")}
-                  onMouseLeave={() => setHoverBlurb(null)}
-                  className="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50"
-                >
-                  Hide deposition
-                </button>
-                {selected.length > 0 && (
-                  <button
-                    onClick={() => onChange([])}
-                    className="rounded px-1.5 py-0.5 text-[10px] text-slate-500 hover:text-slate-800"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-              <div className="mt-1.5 min-h-[14px] text-[10px] leading-tight text-slate-400">
-                {hoverBlurb ?? "Click a lens to add its categories. Most categories are deposition paperwork; structural data is a small fraction."}
-              </div>
-            </div>
-          )}
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 flex max-h-[70vh] w-[min(520px,80vw)] flex-col overflow-hidden rounded border border-slate-200 bg-white text-[11px] shadow-lg">
+          {/* search + clear */}
+          <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 p-2">
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="search categories / items…"
+              className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-2 py-1 text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-500"
+            />
+            {selected.length > 0 && (
+              <button onClick={() => onChange([])} className="shrink-0 text-slate-500 hover:text-slate-800">
+                Clear
+              </button>
+            )}
+          </div>
 
-          {showResults && (
-            <div className="py-1">
-              {catOpts.map((c) => (
-                <button
-                  key={`c:${c}`}
-                  onClick={() => add(catEntry(c))}
-                  className="flex w-full items-center justify-between gap-2 px-2 py-0.5 text-left hover:bg-slate-50"
-                >
-                  <span className="truncate font-mono font-medium text-slate-700">{c}</span>
-                  <span className="shrink-0 text-[9px] uppercase tracking-wide text-indigo-400">category</span>
-                </button>
+          {/* selected tray */}
+          {selected.length > 0 && (
+            <div className="flex shrink-0 flex-wrap gap-1 border-b border-slate-100 bg-slate-50/60 p-2">
+              {selected.map((s) => (
+                <MmcifChip
+                  key={key(s)}
+                  target={s.kind === "category" ? { kind: "category", cat: s.category } : itemTarget(s.label, s.category)}
+                  variant="chip"
+                  onRemove={() => remove(key(s))}
+                />
               ))}
-              {catOpts.length > 0 && itemOpts.length > 0 && <div className="my-1 border-t border-slate-100" />}
-              {itemOpts.map((it) => {
-                const dot = it.label.indexOf(".");
-                const cat = it.label.slice(0, dot + 1);
-                const attr = it.label.slice(dot + 1);
-                return (
-                  <button
-                    key={`i:${it.label}`}
-                    onClick={() => add({ kind: "item", category: it.category, label: it.label })}
-                    className="flex w-full items-center justify-between gap-2 px-2 py-0.5 text-left hover:bg-slate-50"
-                  >
-                    <span className="truncate font-mono">
-                      <span className="text-slate-400">{cat}</span>
-                      <span className="text-teal-700">{attr}</span>
-                    </span>
-                    <span className="shrink-0 text-[9px] uppercase tracking-wide text-slate-300">item</span>
-                  </button>
-                );
-              })}
             </div>
           )}
+
+          <div className="min-h-0 flex-1 overflow-auto no-scrollbar">
+            {q ? (
+              <SearchResults
+                catOpts={catOpts}
+                itemOpts={itemOpts}
+                selectedKeys={selectedKeys}
+                onToggleCat={(c) => toggleEntry(catEntry(c))}
+                onToggleItem={(label, category) => toggleEntry(itemEntry(label, category))}
+              />
+            ) : presets ? (
+              <>
+                <Tier title="Structural">
+                  {structural.map((l) => (
+                    <LensSection
+                      key={l.id}
+                      lens={l}
+                      expanded={expanded.has(l.id)}
+                      onToggleExpand={() => toggleExpand(l.id)}
+                      active={lensActive(l.categories)}
+                      some={lensSome(l.categories)}
+                      onToggleAll={() => toggleCats(l.categories)}
+                      selectedCats={selectedCats}
+                      onToggleCat={(c) => toggleEntry(catEntry(c))}
+                    />
+                  ))}
+                </Tier>
+                <Tier title="Context">
+                  {context.map((l) => (
+                    <LensSection
+                      key={l.id}
+                      lens={l}
+                      expanded={expanded.has(l.id)}
+                      onToggleExpand={() => toggleExpand(l.id)}
+                      active={lensActive(l.categories)}
+                      some={lensSome(l.categories)}
+                      onToggleAll={() => toggleCats(l.categories)}
+                      selectedCats={selectedCats}
+                      onToggleCat={(c) => toggleEntry(catEntry(c))}
+                    />
+                  ))}
+                </Tier>
+                <div className="flex flex-wrap items-center gap-1 p-2">
+                  <button
+                    onClick={() => setCats(presets.structuralOnly)}
+                    className="rounded border border-teal-600/40 bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-800 hover:bg-teal-100"
+                  >
+                    Structural only
+                  </button>
+                  <button
+                    onClick={() => setCats(presets.hideDeposition)}
+                    className="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50"
+                  >
+                    Hide deposition
+                  </button>
+                  <span className="ml-auto text-[10px] text-slate-400">
+                    Click a lens to add its categories; expand to pick individually.
+                  </span>
+                </div>
+              </>
+            ) : null}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function PresetGroup({
-  title,
-  lenses,
-  lensActive,
-  toggleCats,
-  setHoverBlurb,
-}: {
-  title: string;
-  lenses: LensPreset[];
-  lensActive: (cats: string[]) => boolean;
-  toggleCats: (cats: string[]) => void;
-  setHoverBlurb: (b: string | null) => void;
-}) {
-  if (!lenses.length) return null;
+const itemTarget = (label: string, category: string) => {
+  const dot = label.indexOf(".");
+  const field = dot >= 0 ? label.slice(dot + 1) : label;
+  return { kind: "item" as const, cat: category, field };
+};
+
+function Tier({ title, children }: { title: string; children: React.ReactNode }) {
+  if (!children || (Array.isArray(children) && children.every((c) => !c))) return null;
   return (
-    <div className="mb-1">
-      <div className="mb-0.5 text-[9px] uppercase tracking-wide text-slate-400">{title}</div>
-      <div className="flex flex-wrap gap-1">
-        {lenses.map((l) => {
-          const active = lensActive(l.categories);
-          return (
-            <button
-              key={l.id}
-              onClick={() => toggleCats(l.categories)}
-              onMouseEnter={() => setHoverBlurb(`${l.label} — ${l.blurb}`)}
-              onMouseLeave={() => setHoverBlurb(null)}
-              title={l.blurb}
-              className={`rounded border px-1.5 py-0.5 text-[10px] ${
-                active
-                  ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              {l.short} <span className="text-slate-400">· {l.categories.length}</span>
-            </button>
-          );
-        })}
+    <div className="border-b border-slate-100">
+      <div className="px-2 pt-2 text-[9px] font-semibold uppercase tracking-wide text-slate-400">{title}</div>
+      <div className="py-1">{children}</div>
+    </div>
+  );
+}
+
+function LensSection({
+  lens,
+  expanded,
+  onToggleExpand,
+  active,
+  some,
+  onToggleAll,
+  selectedCats,
+  onToggleCat,
+}: {
+  lens: LensPreset;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  active: boolean;
+  some: boolean;
+  onToggleAll: () => void;
+  selectedCats: Set<string>;
+  onToggleCat: (c: string) => void;
+}) {
+  const selCount = lens.categories.filter((c) => selectedCats.has(c)).length;
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 px-2 py-1">
+        <button
+          onClick={onToggleExpand}
+          className="flex h-4 w-4 shrink-0 items-center justify-center text-[8px] text-slate-400 hover:text-slate-700"
+          title={expanded ? "collapse" : "expand"}
+        >
+          {expanded ? "▼" : "▶"}
+        </button>
+        <button
+          onClick={onToggleAll}
+          title={lens.blurb}
+          className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${
+            active
+              ? "border-indigo-500 bg-indigo-500 text-white"
+              : some
+                ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          {lens.short} <span className={active ? "text-indigo-100" : "text-slate-400"}>· {lens.categories.length}</span>
+        </button>
+        <span className="min-w-0 flex-1 truncate text-[10px] text-slate-400">
+          {selCount > 0 && !active ? `${selCount} selected · ` : ""}
+          {lens.blurb}
+        </span>
+      </div>
+      {expanded && (
+        <div className="pb-1 pl-7 pr-2">
+          {lens.categories.map((c) => (
+            <MmcifChip
+              key={c}
+              target={{ kind: "category", cat: c }}
+              variant="row"
+              selected={selectedCats.has(c)}
+              onToggle={() => onToggleCat(c)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SearchResults({
+  catOpts,
+  itemOpts,
+  selectedKeys,
+  onToggleCat,
+  onToggleItem,
+}: {
+  catOpts: string[];
+  itemOpts: { label: string; category: string }[];
+  selectedKeys: Set<string>;
+  onToggleCat: (c: string) => void;
+  onToggleItem: (label: string, category: string) => void;
+}) {
+  if (!catOpts.length && !itemOpts.length) {
+    return <div className="p-3 text-center text-[10px] text-slate-400">No matches.</div>;
+  }
+  return (
+    <div className="py-1">
+      {catOpts.length > 0 && (
+        <div className="px-2 py-1 text-[9px] uppercase tracking-wide text-slate-400">Categories</div>
+      )}
+      <div className="px-2">
+        {catOpts.map((c) => (
+          <MmcifChip
+            key={`c:${c}`}
+            target={{ kind: "category", cat: c }}
+            variant="row"
+            selected={selectedKeys.has(`category:${c}`)}
+            onToggle={() => onToggleCat(c)}
+          />
+        ))}
+      </div>
+      {itemOpts.length > 0 && (
+        <div className="px-2 py-1 text-[9px] uppercase tracking-wide text-slate-400">Items</div>
+      )}
+      <div className="px-2">
+        {itemOpts.map((it) => (
+          <MmcifChip
+            key={`i:${it.label}`}
+            target={itemTarget(it.label, it.category)}
+            variant="row"
+            selected={selectedKeys.has(`item:${it.label}`)}
+            onToggle={() => onToggleItem(it.label, it.category)}
+          />
+        ))}
       </div>
     </div>
   );

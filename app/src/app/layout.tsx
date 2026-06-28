@@ -3,6 +3,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import type { ReactNode } from "react";
+import GlobalHoverTooltip from "@/components/cif/GlobalHoverTooltip";
 import NavBar from "@/components/NavBar";
 
 const ibmSans = IBM_Plex_Sans({
@@ -31,6 +32,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <NavBar />
           <main className="min-h-0 flex-1">{children}</main>
         </div>
+        <GlobalHoverTooltip />
       </body>
     </html>
   );

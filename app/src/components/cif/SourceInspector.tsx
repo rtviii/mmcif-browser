@@ -29,11 +29,37 @@ import {
   buildResidueQuery,
   executeQuery,
 } from "@/lib/molstar/queries";
+import { useStore } from "@/lib/store";
+import { Color } from "molstar/lib/mol-util/color";
 import { type FilterEntry } from "./CategoryFilter";
-import { type HoverTarget } from "./dict-lookup";
-import { HoverDefinitionTooltip } from "./HoverDefinitionTooltip";
 import { OutlinePane, type OutlinePaneHandle } from "./OutlinePane";
+import { ReferencePanel } from "./ReferencePanel";
 import SourceView, { type SourceViewHandle, type ViewOptions } from "./SourceView";
+
+// 3D label / overlay accents: indigo for the persistent pin, sky for transient hover.
+const PIN_COLOR = Color(0x6366f1);
+const HOVER_COLOR = Color(0x0ea5e9);
+
+// A pinned source target: a line (atom / structural / metadata row) or a category header. Drives
+// the persistent text highlight, the 3D selection + label (when it resolves to a loci), and the
+// jump-back chip. `query` is null for rows/categories with no 3D counterpart (e.g. metadata).
+interface PinnedTarget {
+  id: string; // `line:${n}` or `header:${nodeId}` — re-clicking the same id unpins
+  anchorLine: number; // line to scroll back to
+  range: { start: number; end: number } | null; // line highlight (line pins)
+  headerId: string | null; // header node id to highlight (category pins)
+  outlineId: string | null; // outline node to mark
+  label: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  query: any | null;
+}
+
+type ScrollRequest = {
+  line: number;
+  catId?: string;
+  flash: { start: number; end: number };
+  nonce: number;
+};
 
 interface LoadedFile {
   data: string | Uint8Array;
@@ -53,10 +79,11 @@ export default function SourceInspector({
   parsed: ParsedCif | null;
   viewer: MolstarViewer | null;
 }) {
+  const setHoverDef = useStore((s) => s.setHoverDef);
+  const scheduleClearHoverDef = useStore((s) => s.scheduleClearHoverDef);
+  const openRefPanel = useStore((s) => s.openRefPanel);
   const [mode, setMode] = useState<HierarchyMode>("auth");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [hover, setHover] = useState<HoverTarget>(null);
-  const [hoverAnchor, setHoverAnchor] = useState<{ x: number; y: number } | null>(null);
   const [hideNoise, setHideNoise] = useState(false);
   const [collapsePreamble, setCollapsePreamble] = useState(false);
   const [tableMode, setTableMode] = useState(false);
@@ -66,8 +93,9 @@ export default function SourceInspector({
   // (scroll-synced) node, a pending click->scroll request, and a transient source highlight.
   const [outlineExpanded, setOutlineExpanded] = useState<Set<string>>(new Set());
   const [activeOutlineId, setActiveOutlineId] = useState<string | null>(null);
-  const [pendingScroll, setPendingScroll] = useState<{ node: FoldNode; nonce: number } | null>(null);
+  const [pendingScroll, setPendingScroll] = useState<ScrollRequest | null>(null);
   const [highlightRange, setHighlightRange] = useState<{ start: number; end: number } | null>(null);
+  const [pinned, setPinned] = useState<PinnedTarget | null>(null);
   const [outlinePct, setOutlinePct] = useState(30);
   const sourceRef = useRef<SourceViewHandle>(null);
   const outlineRef = useRef<OutlinePaneHandle>(null);
@@ -103,6 +131,9 @@ export default function SourceInspector({
     setCollapsed(collapsedSet);
     setOutlineExpanded(expandedSet);
     setActiveOutlineId(null);
+    setPinned(null);
+    viewer?.clearSelection();
+    viewer?.removePersistentLabel("pin");
     // collapsePreamble intentionally excluded: its toggle updates `collapsed` directly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tree]);
@@ -198,6 +229,13 @@ export default function SourceInspector({
     });
   }, [visible, filterCats, doc]);
 
+  // The preamble categories actually present in this file (method/deposition headers) — shown in
+  // the View menu so "Hide preamble" lists exactly what it collapses.
+  const preambleCategories = useMemo(
+    () => (tree ? [...new Set(tree.roots.filter((r) => isPreamble(r.category)).map((r) => r.category))] : []),
+    [tree],
+  );
+
   // Outline rows: the full FoldNode tree flattened against the outline's OWN expand state.
   // Deps are tree + outlineExpanded only, so scrolling/folding the source never re-flattens it.
   const outlineFlat = useMemo(() => (tree ? flattenOutline(tree, outlineExpanded) : []), [tree, outlineExpanded]);
@@ -260,7 +298,12 @@ export default function SourceInspector({
         });
       }
       setActiveOutlineId(node.id); // select the clicked node (scroll-sync is suppressed briefly)
-      setPendingScroll({ node, nonce: pendingNonce.current++ });
+      setPendingScroll({
+        line: node.startLine,
+        catId,
+        flash: { start: node.startLine, end: node.endLine },
+        nonce: pendingNonce.current++,
+      });
     },
     [doc, tree],
   );
@@ -288,24 +331,20 @@ export default function SourceInspector({
   // layout frame. We clear pendingScroll WITHOUT an effect cleanup so the re-render that clearing
   // triggers doesn't cancel the transient suppress/highlight timers below.
   useEffect(() => {
-    if (!pendingScroll || !doc) return;
-    const { node } = pendingScroll;
-    let idx = visibleShown.findIndex((r) => r.kind === "line" && r.lineIndex === node.startLine);
-    if (idx < 0) {
-      const si = doc.lineToSpan[node.startLine];
-      const catId = node.level === "category" ? node.id : si >= 0 ? tree?.roots[si]?.id : undefined;
-      if (catId) idx = visibleShown.findIndex((r) => r.kind === "header" && r.node.id === catId);
-    }
+    if (!pendingScroll) return;
+    const { line, catId, flash } = pendingScroll;
+    let idx = visibleShown.findIndex((r) => r.kind === "line" && r.lineIndex === line);
+    if (idx < 0 && catId) idx = visibleShown.findIndex((r) => r.kind === "header" && r.node.id === catId);
     setPendingScroll(null);
     if (idx < 0) return; // filtered out / unresolvable -> skip (don't mutate the user's filter)
     suppressTopChange.current = true;
     sourceRef.current?.scrollToIndex(idx, "start");
-    setHighlightRange({ start: node.startLine, end: node.endLine });
+    setHighlightRange({ start: flash.start, end: flash.end });
     setTimeout(() => {
       suppressTopChange.current = false;
     }, 250);
     setTimeout(() => setHighlightRange(null), 1200);
-  }, [pendingScroll, visibleShown, doc, tree]);
+  }, [pendingScroll, visibleShown]);
 
   const startOutlineDrag = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -362,20 +401,21 @@ export default function SourceInspector({
 
   // auth_asym_id / auth_seq_id for a given atom_site row (read directly, so highlighting
   // works whether the fold hierarchy is grouped by auth_* or label_*).
-  const authFor = (block: number, row: number): { chain: string; seq: number } | null => {
+  const authFor = (block: number, row: number): { chain: string; seq: number; comp: string } | null => {
     if (!parsed) return null;
     const cat = asMolCifFile(parsed.raw).blocks[block]?.categories["atom_site"];
     const asym = cat?.getField("auth_asym_id");
     if (!asym) return null;
     const seq = cat?.getField("auth_seq_id");
-    return { chain: asym.str(row), seq: seq ? seq.int(row) : 0 };
+    const comp = cat?.getField("label_comp_id");
+    return { chain: asym.str(row), seq: seq ? seq.int(row) : 0, comp: comp ? comp.str(row) : "" };
   };
 
-  // Full atom identity for an atom_site row, for atom-granularity highlight/focus.
+  // Full atom identity for an atom_site row, for atom-granularity highlight/focus + label text.
   const atomFor = (
     block: number,
     row: number,
-  ): { chain: string; seq: number; atom: string; alt: string } | null => {
+  ): { chain: string; seq: number; atom: string; alt: string; comp: string } | null => {
     if (!parsed) return null;
     const cat = asMolCifFile(parsed.raw).blocks[block]?.categories["atom_site"];
     const asym = cat?.getField("auth_asym_id");
@@ -383,11 +423,13 @@ export default function SourceInspector({
     const seq = cat?.getField("auth_seq_id");
     const atom = cat?.getField("label_atom_id");
     const alt = cat?.getField("label_alt_id");
+    const comp = cat?.getField("label_comp_id");
     return {
       chain: asym.str(row),
       seq: seq ? seq.int(row) : 0,
       atom: atom ? atom.str(row) : "",
       alt: alt ? alt.str(row) : "",
+      comp: comp ? comp.str(row) : "",
     };
   };
 
@@ -410,12 +452,22 @@ export default function SourceInspector({
     return f ? f.int(row) : null;
   };
 
-  // Map a (non-atom_site) category row to a 3D query: entity rows highlight all instances of
-  // the entity; struct_conf / struct_sheet_range highlight the secondary-structure residue
-  // range; struct_conn highlights both bond partners; chem_comp highlights every instance of
-  // the component. Returns null for rows / categories we don't map (yet).
+  // Map a source line to its 3D query + a human label (for the hover/pin 3D label and the pin
+  // chip). atom_site rows resolve to an atom (or its residue); entity rows to the entity;
+  // struct_conf / struct_sheet_range to the secondary-structure range; struct_conn to both bond
+  // partners; chem_comp to the component. Null for lines with no 3D counterpart (metadata, gaps).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const queryForLine = (lineIndex: number): any | null => {
+  const resolveLine = (lineIndex: number): { query: any; label: string } | null => {
+    const a = atomForLine(lineIndex);
+    if (a) {
+      const res = `${a.comp} ${a.seq}`.trim();
+      if (a.atom)
+        return {
+          query: buildAtomQuery(a.chain, a.seq, a.atom, a.alt || undefined),
+          label: `${res} · ${a.atom} (${a.chain})`,
+        };
+      return { query: buildResidueQuery(a.chain, a.seq), label: `${res} (chain ${a.chain})` };
+    }
     if (!doc || !parsed) return null;
     const si = doc.lineToSpan[lineIndex];
     if (si < 0) return null;
@@ -429,13 +481,15 @@ export default function SourceInspector({
     switch (span.category) {
       case "entity": {
         const id = fstr(cat, "id", row);
-        return id ? buildEntityQuery(id) : null;
+        if (!id) return null;
+        const desc = fstr(cat, "pdbx_description", row);
+        return { query: buildEntityQuery(id), label: desc || `entity ${id}` };
       }
       case "entity_poly":
       case "entity_poly_seq":
       case "pdbx_entity_nonpoly": {
         const eid = fstr(cat, "entity_id", row);
-        return eid ? buildEntityQuery(eid) : null;
+        return eid ? { query: buildEntityQuery(eid), label: `entity ${eid}` } : null;
       }
       case "struct_conf":
       case "struct_sheet_range": {
@@ -443,7 +497,11 @@ export default function SourceInspector({
         const beg = fint(cat, "beg_auth_seq_id", row);
         const end = fint(cat, "end_auth_seq_id", row);
         if (!chain || beg == null) return null;
-        return buildResidueQuery(chain, beg, end ?? undefined);
+        const kind = span.category === "struct_conf" ? "helix" : "strand";
+        return {
+          query: buildResidueQuery(chain, beg, end ?? undefined),
+          label: `${kind} ${chain} ${beg}${end != null ? `–${end}` : ""}`,
+        };
       }
       case "struct_conn": {
         const c1 = fstr(cat, "ptnr1_auth_asym_id", row);
@@ -451,11 +509,15 @@ export default function SourceInspector({
         const c2 = fstr(cat, "ptnr2_auth_asym_id", row);
         const s2 = fint(cat, "ptnr2_auth_seq_id", row);
         if (!c1 || s1 == null) return null;
-        return c2 && s2 != null ? buildBondQuery(c1, s1, c2, s2) : buildResidueQuery(c1, s1);
+        if (c2 && s2 != null)
+          return { query: buildBondQuery(c1, s1, c2, s2), label: `bond ${c1} ${s1} – ${c2} ${s2}` };
+        return { query: buildResidueQuery(c1, s1), label: `${c1} ${s1}` };
       }
       case "chem_comp": {
         const id = fstr(cat, "id", row);
-        return id ? buildComponentQuery(id) : null;
+        if (!id) return null;
+        const name = fstr(cat, "name", row);
+        return { query: buildComponentQuery(id), label: name ? `${id} — ${name}` : id };
       }
       default:
         return null;
@@ -463,11 +525,14 @@ export default function SourceInspector({
   };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const show = (query: any | null, focus: boolean) => {
+  const show = (query: any | null, focus: boolean, label?: string | null) => {
     if (!viewer) return;
     const structure = viewer.getCurrentStructure();
     if (!structure || !query) {
-      if (!focus) viewer.highlightLoci(null);
+      if (!focus) {
+        viewer.highlightLoci(null);
+        viewer.hideHoverLabel();
+      }
       return;
     }
     const loci = executeQuery(query, structure);
@@ -475,34 +540,32 @@ export default function SourceInspector({
       if (loci) viewer.focusLoci(loci);
     } else {
       viewer.highlightLoci(loci);
+      if (loci && label) viewer.showHoverLabel(loci, label, HOVER_COLOR);
+      else viewer.hideHoverLabel();
     }
   };
 
   const onRowEnter = (lineIndex: number) =>
     throttle(() => {
-      const a = atomForLine(lineIndex);
-      if (a) {
-        show(
-          a.atom ? buildAtomQuery(a.chain, a.seq, a.atom, a.alt || undefined) : buildResidueQuery(a.chain, a.seq),
-          false,
-        );
-        return;
-      }
-      show(queryForLine(lineIndex), false);
+      const r = resolveLine(lineIndex);
+      show(r?.query ?? null, false, r?.label);
     });
 
   const onNodeEnter = (node: FoldNode) =>
     throttle(() => {
       if (node.category !== "atom_site" || (node.level !== "chain" && node.level !== "residue")) {
         viewer?.highlightLoci(null);
+        viewer?.hideHoverLabel();
         return;
       }
       const a = authFor(node.block ?? 0, node.rowStart);
       if (!a) {
         viewer?.highlightLoci(null);
+        viewer?.hideHoverLabel();
         return;
       }
-      show(node.level === "chain" ? buildChainQuery(a.chain) : buildResidueQuery(a.chain, a.seq), false);
+      if (node.level === "chain") show(buildChainQuery(a.chain), false, `chain ${a.chain}`);
+      else show(buildResidueQuery(a.chain, a.seq), false, `${a.comp} ${a.seq} (chain ${a.chain})`.trim());
     });
 
   const onStructLeave = () => {
@@ -511,25 +574,166 @@ export default function SourceInspector({
       rafRef.current = null;
     }
     viewer?.highlightLoci(null);
+    viewer?.hideHoverLabel();
   };
 
+  // --- persistent single pin: click a row / category to keep it highlighted (text + 3D + label)
+  // while you scroll away; click it again, click the chip's ×, or press Esc to release.
+  const applyPin = (t: PinnedTarget) => {
+    setPinned(t);
+    if (!viewer) return;
+    viewer.hideHoverLabel();
+    const structure = viewer.getCurrentStructure();
+    const loci = structure && t.query ? executeQuery(t.query, structure) : null;
+    if (loci) {
+      viewer.setSelection(loci);
+      viewer.addPersistentLabel("pin", loci, t.label, PIN_COLOR);
+      viewer.focusLoci(loci);
+    } else {
+      viewer.clearSelection();
+      viewer.removePersistentLabel("pin");
+    }
+  };
+
+  const clearPin = useCallback(() => {
+    setPinned(null);
+    viewer?.clearSelection();
+    viewer?.removePersistentLabel("pin");
+  }, [viewer]);
+
+  const togglePin = (t: PinnedTarget) => {
+    if (pinned?.id === t.id) clearPin();
+    else applyPin(t);
+  };
+
+  // Esc releases the pin (only while something is pinned, so it doesn't swallow other Escapes).
+  useEffect(() => {
+    if (!pinned) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && clearPin();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pinned, clearPin]);
+
   const onRowClick = (lineIndex: number) => {
-    const a = atomForLine(lineIndex);
-    if (a) {
-      show(
-        a.atom ? buildAtomQuery(a.chain, a.seq, a.atom, a.alt || undefined) : buildResidueQuery(a.chain, a.seq),
-        true,
-      );
+    const r = resolveLine(lineIndex);
+    const cat = doc ? doc.spans[doc.lineToSpan[lineIndex]]?.category : undefined;
+    togglePin({
+      id: `line:${lineIndex}`,
+      anchorLine: lineIndex,
+      range: { start: lineIndex, end: lineIndex },
+      headerId: null,
+      outlineId: null,
+      label: r?.label ?? cat ?? `line ${lineIndex + 1}`,
+      query: r?.query ?? null,
+    });
+  };
+
+  const onHeaderClick = (node: FoldNode) => {
+    togglePin({
+      id: `header:${node.id}`,
+      anchorLine: node.startLine,
+      range: null,
+      headerId: node.id,
+      outlineId: node.id,
+      label: node.category,
+      query: null,
+    });
+  };
+
+  // Jump-back: scroll the source to the pinned target (re-expanding its category if needed) and
+  // flash it. Reuses the same pendingScroll path as outline clicks.
+  const jumpToPinned = () => {
+    if (!pinned || !doc) return;
+    const si = doc.lineToSpan[pinned.anchorLine];
+    const catId = pinned.headerId ?? (si >= 0 ? tree?.roots[si]?.id : undefined) ?? undefined;
+    if (catId) {
+      setCollapsed((prev) => {
+        if (!prev.has(catId)) return prev;
+        const next = new Set(prev);
+        next.delete(catId);
+        return next;
+      });
+    }
+    const flash = pinned.range ?? { start: pinned.anchorLine, end: pinned.anchorLine };
+    setPendingScroll({ line: pinned.anchorLine, catId, flash, nonce: pendingNonce.current++ });
+  };
+
+  // --- dig-deeper reference panel: derive (block, category, row) for a source line, open the
+  // panel for the pinned row, and jump the source back to a joined row the panel surfaces. ---
+  const rowContextForLine = (
+    lineIndex: number,
+  ): { blockIndex: number; category: string; rowIndex: number } | null => {
+    if (!doc) return null;
+    const si = doc.lineToSpan[lineIndex];
+    if (si < 0) return null;
+    const span = doc.spans[si];
+    if (!span) return null;
+    if (span.kind === "loop") {
+      if (span.category === "atom_site") {
+        if (span.dataStart < 0) return null;
+        const row = lineIndex - span.dataStart;
+        if (row < 0 || row >= span.dataLineCount) return null;
+        return { blockIndex: span.block, category: span.category, rowIndex: row };
+      }
+      const row = rowMaps.get(si)?.get(lineIndex);
+      if (row === undefined) return null;
+      return { blockIndex: span.block, category: span.category, rowIndex: row };
+    }
+    return { blockIndex: span.block, category: span.category, rowIndex: 0 }; // kv: single row
+  };
+
+  const pinReferences = () => {
+    if (!pinned || !doc) return;
+    const cat = doc.spans[doc.lineToSpan[pinned.anchorLine]]?.category;
+    // category-header pin -> schema mode; row pin -> instance mode (row joins).
+    if (pinned.headerId) {
+      if (cat) openRefPanel({ kind: "category", cat });
       return;
     }
-    const q = queryForLine(lineIndex);
-    if (q) show(q, true);
+    const ctx = rowContextForLine(pinned.anchorLine);
+    if (ctx) openRefPanel({ kind: "category", cat: ctx.category }, ctx);
+    else if (cat) openRefPanel({ kind: "category", cat });
+  };
+
+  const jumpToInstance = (blockIndex: number, category: string, rowIndex: number) => {
+    if (!doc || !tree) return;
+    const si = doc.spans.findIndex((s) => s.category === category && s.block === blockIndex);
+    if (si < 0) return;
+    const span = doc.spans[si];
+    let line = -1;
+    if (span.kind === "loop") {
+      if (category === "atom_site") {
+        if (span.dataStart >= 0) line = span.dataStart + rowIndex;
+      } else {
+        const map = rowMaps.get(si);
+        if (map) for (const [ln, r] of map) if (r === rowIndex) { line = ln; break; }
+      }
+    } else {
+      line = span.start; // kv: single row
+    }
+    if (line < 0) return;
+    const catId = tree.roots[si]?.id;
+    if (catId) {
+      setCollapsed((prev) => {
+        if (!prev.has(catId)) return prev;
+        const next = new Set(prev);
+        next.delete(catId);
+        return next;
+      });
+    }
+    setPendingScroll({
+      line,
+      catId,
+      flash: { start: line, end: line },
+      nonce: pendingNonce.current++,
+    });
   };
 
   const viewOptions: ViewOptions = { hideNoise, collapsePreamble, tableMode };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <ReferencePanel parsed={parsed} onJumpToInstance={jumpToInstance} />
       {isText && doc && tree ? (
         <div ref={innerSplitRef} className="flex min-h-0 flex-1">
           <div
@@ -540,6 +744,7 @@ export default function SourceInspector({
               ref={outlineRef}
               rows={outlineFlat}
               activeId={activeOutlineId}
+              pinnedId={pinned?.outlineId ?? null}
               onToggle={onOutlineToggle}
               onNodeEnter={onNodeEnter}
               onNodeLeave={onStructLeave}
@@ -567,23 +772,25 @@ export default function SourceInspector({
               onToggle={onToggle}
               allExpanded={collapsed.size === 0}
               onToggleExpandAll={onToggleExpandAll}
+              preambleCategories={preambleCategories}
               filter={filter}
               onFilterChange={setFilter}
-              onHoverItem={(cat, field, e) => {
-                setHover({ kind: "item", cat, field });
-                setHoverAnchor({ x: e.clientX, y: e.clientY });
-              }}
-              onHoverCategory={(cat, e) => {
-                setHover({ kind: "category", cat });
-                setHoverAnchor({ x: e.clientX, y: e.clientY });
-              }}
-              onClearHover={() => setHover(null)}
+              onHoverItem={(cat, field, e) => setHoverDef({ kind: "item", cat, field }, { x: e.clientX, y: e.clientY })}
+              onHoverCategory={(cat, e) => setHoverDef({ kind: "category", cat }, { x: e.clientX, y: e.clientY })}
+              onClearHover={scheduleClearHoverDef}
               onRowEnter={onRowEnter}
               onNodeEnter={onNodeEnter}
               onStructLeave={onStructLeave}
               onRowClick={onRowClick}
+              onHeaderClick={onHeaderClick}
               onTopLineChange={onTopLineChange}
               highlightRange={highlightRange}
+              pinnedRange={pinned?.range ?? null}
+              pinnedHeaderId={pinned?.headerId ?? null}
+              pinnedLabel={pinned?.label ?? null}
+              onPinJump={jumpToPinned}
+              onPinClear={clearPin}
+              onPinReferences={pinReferences}
             />
           </div>
         </div>
@@ -594,7 +801,6 @@ export default function SourceInspector({
             : "Parsing…"}
         </div>
       )}
-      <HoverDefinitionTooltip hover={hover} anchor={hoverAnchor} />
     </div>
   );
 }

@@ -15,6 +15,7 @@ export interface OutlinePaneHandle {
 interface OutlinePaneProps {
   rows: OutlineRow[];
   activeId: string | null;
+  pinnedId?: string | null;
   onToggle: (id: string) => void;
   onNodeEnter: (node: FoldNode) => void;
   onNodeLeave: () => void;
@@ -26,7 +27,7 @@ interface OutlinePaneProps {
 // clicking scrolls the (pristine) source view to it. Virtualized — a chain can hold
 // thousands of residues. Selection (`activeId`) is styling-only, driven by source scroll.
 export const OutlinePane = forwardRef<OutlinePaneHandle, OutlinePaneProps>(function OutlinePane(
-  { rows, activeId, onToggle, onNodeEnter, onNodeLeave, onNodeClick },
+  { rows, activeId, pinnedId, onToggle, onNodeEnter, onNodeLeave, onNodeClick },
   ref,
 ) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -54,6 +55,7 @@ export const OutlinePane = forwardRef<OutlinePaneHandle, OutlinePaneProps>(funct
             const row = rows[vi.index];
             const node = row.node;
             const active = node.id === activeId;
+            const isPinned = pinnedId != null && node.id === pinnedId;
             const tone =
               node.level === "category"
                 ? "font-medium text-slate-700"
@@ -64,8 +66,8 @@ export const OutlinePane = forwardRef<OutlinePaneHandle, OutlinePaneProps>(funct
               <div
                 key={vi.key}
                 className={`absolute left-0 right-0 flex items-center pr-2 ${
-                  active ? "bg-indigo-50" : "hover:bg-slate-50"
-                }`}
+                  isPinned ? "shadow-[inset_3px_0_0_0_#6366f1] " : ""
+                }${active ? "bg-indigo-50" : "hover:bg-slate-50"}`}
                 style={{
                   top: 0,
                   height: vi.size,
