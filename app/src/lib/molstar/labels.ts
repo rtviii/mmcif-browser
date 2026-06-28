@@ -32,6 +32,7 @@ export class LabelManager {
   private layer: HTMLDivElement | null = null;
   private drawSub: { unsubscribe: () => void } | null = null;
   private hover: LabelNode | null = null;
+  private hoverActive = false;
   private persistent = new Map<string, LabelNode>();
   private readonly out = Vec4.create(0, 0, 0, 0);
 
@@ -113,7 +114,10 @@ export class LabelManager {
   }
 
   private updateAll(): void {
-    if (this.hover) this.place(this.hover);
+    // Only re-place the hover node while hover is active. Without this guard, a frame redraw
+    // (e.g. during fast source scroll) re-shows a node that hideHover() just hid, because
+    // place() unconditionally sets display="".
+    if (this.hover && this.hoverActive) this.place(this.hover);
     for (const n of this.persistent.values()) this.place(n);
   }
 
@@ -125,10 +129,12 @@ export class LabelManager {
       this.hover = this.makeNode(text, hex);
       layer.appendChild(this.hover.box);
     }
+    this.hoverActive = true;
     this.update(this.hover, text, hex, loci);
   }
 
   hideHover(): void {
+    this.hoverActive = false;
     if (this.hover) this.hover.box.style.display = "none";
   }
 

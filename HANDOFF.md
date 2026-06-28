@@ -123,22 +123,32 @@ the baseline is solid, so branch freely before starting the next batch.
 
 ## Next task
 
-The navigation rework is DONE — the left panel is now a split outline pane + pristine source view (see
-ROADMAP "Inspector navigation rework — split outline pane"). Natural next focus: **reverse 3D linkage** —
-3D hover/click should scroll + highlight the source row AND select the matching outline node. The plumbing
-exists: `SourceView` exposes a `scrollToIndex` handle, `OutlinePane` exposes `scrollToIndex` + takes
-`activeOutlineId`, and `deepestVisibleNodeAt` (`cif-source/outline.ts`) maps a source line to its outline node.
+The 2026-06-28 controls/pin/labels batch is DONE (uncommitted, branch `inspector-controls-pin-labels`; see
+ROADMAP "Inspector — controls refactor + reusable context chip + persistent pin + 3D labels"). It added the
+reusable `MmcifChip` + store tooltip, the hover "View" menu, the big filter popover, a persistent single pin,
+and tethered in-scene 3D labels.
+
+Natural next focus: **the reference graph** ("dig deeper") — DESIGNED this session, not built. For any
+row/item/category, a ~400×400 popover of incoming/outgoing foreign keys. The entry point is already wired:
+`MmcifChip`'s `onDigDeeper`. Build on the existing dictionary-graph instrumentation (`store.ts` `adj`,
+`graph.json` `GraphEdge.links`, `GraphExplorer`/`Sidebar`). Phases R1 schema / R2 instance-join / R3
+reverse-refs — full plan in ROADMAP "Next → Reference graph". Still also open: **reverse 3D linkage** (3D
+hover/click → scroll + select the source row + outline node; plumbing exists — `SourceView.scrollToIndex`,
+`OutlinePane` `activeId`, `deepestVisibleNodeAt`).
 
 Other deferred (ROADMAP "Carried-over"): interaction map for `struct_site`/assemblies/`struct_asym`/
-unit-cell; toolbar crowding at narrow splits; retire "Hide preamble" (redundant with the Phase-6 presets);
-`chem_comp_bond` lens tag (Ligands vs Bonds); whole-loop column alignment past the first-rows sample.
+unit-cell; retire "Hide preamble" (the View menu now at least lists what it hides, but it's still a prefix
+heuristic); `chem_comp_bond` lens tag (Ligands vs Bonds); whole-loop column alignment past the first-rows
+sample. (Toolbar crowding at narrow splits is now FIXED.)
 
 ## Notes
 
 - `~/dev/fend_tubulinxyz` is the user's tubulin viewer and the SOURCE of our Mol* patterns; it's
   pre-indexed in Deepwiki. Use Deepwiki for its molstar styling/representation specifics.
-- Git: `main` is at `a60e4fe`. Branch `inspector-file-viewer` (off `a60e4fe`): Phase 4 batch (5 commits to
-  `523db7d`), then Phase 5+6 (`2de091b`), then the split outline pane rework (`fcb7d76`). Working tree clean;
-  nothing merged to `main` yet. The user signs commits — if signing fails ("Couldn't find key in agent"),
-  `ssh-add ~/.ssh/rtviii` first (the ed25519 key matching `user.signingkey`). `.claude/launch.json` has
-  `autoPort: true` (port 3000 was occupied during dev); revert if you want it pinned.
+- Git: `main` now carries the former `inspector-file-viewer` work (tip `17591d6`: Phase 4/5/6 + the split
+  outline pane rework). This session's controls/pin/labels batch is UNCOMMITTED on branch
+  `inspector-controls-pin-labels` (off `main`) — new files `cif/MmcifChip.tsx`, `cif/GlobalHoverTooltip.tsx`,
+  `cif/ViewMenu.tsx`, `lib/molstar/labels.ts`; edits to `store.ts`, `app/layout.tsx`, `SourceInspector.tsx`,
+  `SourceView.tsx`, `CategoryFilter.tsx`, `OutlinePane.tsx`, `viewer.ts`. The user signs commits — if signing
+  fails ("Couldn't find key in agent"), `ssh-add ~/.ssh/rtviii` first (the ed25519 key matching
+  `user.signingkey`). `.claude/launch.json` has `autoPort: true` (port 3000 was occupied during dev).

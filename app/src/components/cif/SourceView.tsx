@@ -65,6 +65,9 @@ export interface SourceViewProps {
   onToggleNoise: () => void;
   onToggleTable: () => void;
   onTogglePreamble: () => void;
+  // Outline pane visibility (the outline lives in SourceInspector, toggled from this toolbar).
+  outlineShown?: boolean;
+  onToggleOutline?: () => void;
   onToggle: (id: string) => void;
   allExpanded: boolean;
   onToggleExpandAll: () => void;
@@ -197,6 +200,11 @@ const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function Source
           onToggleNoise={props.onToggleNoise}
           preambleCategories={props.preambleCategories}
         />
+        {props.onToggleOutline && (
+          <Toggle on={!!props.outlineShown} onClick={props.onToggleOutline}>
+            Outline
+          </Toggle>
+        )}
         <Toggle on={viewOptions.tableMode} onClick={props.onToggleTable}>
           Table
         </Toggle>
@@ -445,9 +453,8 @@ function TableLine({
           {span.fieldNames.map((f, c) => (
             <span
               key={c}
-              className="mr-1 inline-block shrink-0 overflow-hidden text-ellipsis whitespace-nowrap border-b border-slate-200 text-[10px] text-teal-700 hover:text-teal-900"
+              className="mr-1 inline-block shrink-0 cursor-help overflow-hidden text-ellipsis whitespace-nowrap border-b border-slate-200 text-[10px] text-teal-700 hover:text-teal-900"
               style={{ width: cellPx(table.widths[c]) }}
-              title={f}
               onMouseEnter={(e) => onHoverItem(span.category, f, e)}
               onMouseLeave={onClearHover}
             >
@@ -486,7 +493,6 @@ function TableLine({
           <span
             className="mr-2 inline-block shrink-0 cursor-help overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-slate-500 hover:text-slate-800"
             style={{ width: cellPx(kvt.itemWidth) }}
-            title={item.attr}
             onMouseEnter={(e) => onHoverItem(span.category, item.attr, e)}
             onMouseLeave={onClearHover}
           >

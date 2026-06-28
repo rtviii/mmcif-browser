@@ -216,7 +216,119 @@ triangle) are gone.
   or the category header. Inner draggable outline|source split (no Mol* resize). Verified on 1cbs + 1aon
   (58,870-row `atom_site`, 21 chains); typecheck clean, no console errors.
 
+### Inspector — controls refactor + reusable context chip + persistent pin + 3D labels (done, branch `inspector-controls-pin-labels`)
+2026-06-28. Verified in-browser on 9mlf (typecheck clean, no console errors). UNCOMMITTED (working tree)
+— branch off `main` (which now carries the old `inspector-file-viewer` commits).
+- Shared mmCIF category/item element + one tooltip (`components/cif/MmcifChip.tsx`,
+  `GlobalHoverTooltip.tsx`): the hover-definition state moved into the Zustand store (`store.ts`:
+  `hoverDef`/`hoverAnchor`/`setHoverDef`/`clearHoverDef`), one `HoverDefinitionTooltip` mounts at the app
+  root (`app/layout.tsx`), and `MmcifChip` (variants `chip`/`row`/`inline`, optional `onToggle`/`onRemove`/
+  `onDigDeeper`) raises it. `SourceInspector` dropped its local hover state and routes the source-view
+  token/header hover through the store, so every category/item context looks + behaves the same. Verified
+  the same tooltip fires from a View-menu pill AND a source category name.
+- Compact top bar + hover "View" menu (`components/cif/ViewMenu.tsx`): `auth_*`/`label_*`, Hide preamble,
+  Hide noise consolidated into one hover/click menu, each with a plain-English explanation; Hide preamble
+  also lists the file's actual preamble categories as `MmcifChip` pills (the `isPreamble` set over
+  `tree.roots`). Table + Collapse/Expand-all stay as one-click buttons. Bar is now
+  `View ▾ | Table | Expand all | Filter / lenses ▾ | N rows`.
+- Filter / lenses as a real panel (rewrote `CategoryFilter.tsx`): a button (active-count badge) opens a
+  ~520px popover — search box, collapsible lens clusters (Structural/Context) each expandable to its
+  categories as `MmcifChip` rows with a toggle + the shared tooltip, plus Structural only / Hide deposition
+  / Clear. `FilterEntry[]` contract unchanged (`SourceInspector.visibleShown` untouched). The `onDigDeeper`
+  hook on each row is the wired-but-unused entry point for the reference graph below.
+- Persistent single pin (`SourceInspector` `pinned: PinnedTarget`, `SourceView` pin strip): click a row
+  (atom / structural / metadata) or a category header to pin it — persistent indigo text highlight
+  (`pinnedRange`/`pinnedHeaderId`), an outline mark (`OutlinePane` `pinnedId`), the 3D selection + a
+  persistent label, and a `PINNED <label> × unpin` strip below the toolbar that scrolls back (reuses the
+  `pendingScroll` path, now generalized from a `FoldNode` to a `{line, catId, flash}` `ScrollRequest`).
+  Re-click / the chip's × / Esc release it. `resolveLine` replaced `queryForLine` and returns `{query,
+  label}` for hover, click, and pin.
+- 3D labels on hover + pin (`lib/molstar/labels.ts` — `LabelManager` ported from `~/dev/fend_tubulinxyz`,
+  Mol* 5.10 `mol-repr/shape/loci/label`): `viewer.ts` gained `showHoverLabel`/`hideHoverLabel`/
+  `addPersistentLabel`/`removePersistentLabel`. Hovering/pinning a structural row shows a tethered in-scene
+  text label populated with the item (atom `COMP seq · atom (chain)`, residue, `chain X`, entity
+  description, `helix/strand X a–b`, bond, chem_comp name) — sky for hover, indigo for the pin — so the
+  faint Mol* highlight is no longer the only signal. Verified: the "Stathmin-4" label tethered to entity 3.
+
 ## Next
+
+### Reference graph — what links to / from any element ("dig deeper")
+BUILT 2026-06-28 (s2), branch `inspector-controls-pin-labels` (uncommitted): `cif/ReferencePanel.tsx` (custom
+MmcifChip ego-view, not React Flow) + `lib/cif-source/joins.ts` (R2 forward joins + R3 reverse scan, capped, with
+a residue-positional adapter for struct_conf/sheet_range/conn/site_gen). Store slice `itemChildren` + `refPanel`.
+Opened from the reachable tooltip's "References" button and the pinned strip's "⧉ references". The R1-R3 sketch
+below is the original design; the follow-up "references = file navigation" rework is in the next-session batch.
+For any row / item / category, a compact ~400×400 popover
+that shows what it REFERENCES (outgoing foreign keys) and what REFERENCES it (incoming), beyond the
+structural hierarchy. Entry point already wired: `MmcifChip`'s `onDigDeeper` (currently unused). Build on
+the dictionary-graph instrumentation that already exists for `/` (`store.ts` `adj.in`/`adj.out`,
+`GraphEdge.links {child, parent}` from `graph.json`, the `GraphExplorer`/`Sidebar` rendering). Three layers,
+phased:
+- R1 — schema layer (cheap, mostly built). For a CATEGORY: the categories it links to / that link to it,
+  at item granularity, straight from `adj` + `GraphEdge.links`. A focused reuse of the existing graph data
+  in a small popover (reuse React Flow, or a lightweight custom tree). This alone makes `MmcifChip` "dig
+  deeper" useful everywhere it appears.
+- R2 — instance layer (the meaty part the user actually asked for). For a SPECIFIC row, resolve its actual
+  FK VALUES to specific rows in referenced categories: e.g. an `atom_site` row → `label_asym_id` joins
+  `struct_asym.id` → `label_entity_id` → the `entity` row; `auth_seq_id`+asym → `entity_poly_seq`. Needs a
+  lazily-built per-file value index (`category.field` value → row indices), parsed from `parsed.raw`. This is
+  the "what is this atom part of" chain (atom → residue → chain → entity).
+- R3 — reverse references. Scan the FK tables (`struct_conf`, `struct_sheet_range`, `struct_conn`,
+  `struct_site_gen`, `pdbx_struct_mod_residue`, …) for rows that MENTION the focused residue/atom/chain —
+  "this residue also appears in helix X / bond Y / site Z".
+- UI: centered focused node; incoming above/left, outgoing below/right; nodes clickable to navigate (scroll
+  the source + re-pin via the existing `pendingScroll` / pin machinery). Compose with the persistent pin so
+  "dig deeper" and "pin" reinforce each other.
+
+### Next session — polish + references-as-navigation (from 2026-06-28 s2 in-browser feedback)
+Surfaced after testing the DOM-overlay labels / reachable tooltip / reference panel on 8roj + chem_comp_bond.
+All on branch `inspector-controls-pin-labels` (still UNCOMMITTED). Roughly ordered by cost.
+
+1. **Duplicate tooltip (quick).** A table-mode column header shows BOTH the native browser `title` tooltip
+   ("value_order") and our dictionary tooltip — the small one is useless. Remove `title={f}` at `SourceView.tsx:450`
+   (audit other `title=` on hover-def triggers). Dictionary tooltip is the only one.
+
+2. **Reference-panel header truncates the name (quick).** Header chip is `MmcifChip variant="chip"`, inner span
+   `max-w-[160px] truncate` (`MmcifChip.tsx:109`), so `_chem_comp_bond.value_ord…` clips. Render the FULL name in
+   the header (use `variant="inline"` or a dedicated non-truncating title); keep truncation on neighbour chips.
+
+3. **Hover label persists after fast scroll (bug).** Fast scrolling sometimes leaves a hover label stuck (no pin).
+   Cause: in `labels.ts`, `hideHover()` sets the hover node `display:none`, but `updateAll()` (every `didDraw`)
+   re-calls `place(this.hover)` → `display:""` re-shows it. Fix: a `hoverActive` flag (or per-node `active`) that
+   `hideHover` clears, `updateAll`/`place` honour, `showHover` sets. Also confirm `onStructLeave` cancels the
+   pending throttled show (`rafRef`) so a queued show can't reappear after leave.
+
+4. **Filter lenses = mutually exclusive (radio).** The lens clusters currently UNION into the selection. Make each
+   lens preset REPLACE the whole category selection (one active at a time): point the lens `onToggleAll` at
+   `setCats(l.categories)` instead of `toggleCats` (`CategoryFilter.tsx:83-91`); "active" = current selection equals
+   that lens's set. ("Structural only" / "Hide deposition" already replace.)
+
+5. **Filter: full category list by default.** Beneath the lens presets (no-search view), render the COMPLETE in-file
+   category list as a scrollable section of toggle rows so the search space is obvious without typing. `catOpts`
+   already computes it but is capped at `MAX_OPTS = 60` (`CategoryFilter.tsx:30,71`) and only shown in
+   `SearchResults`. Raise/remove the cap for the default list (or virtualize) + an "All categories" section.
+
+6. **Outline pane toggleable + hidden by default.** Reclaim horizontal space. Add `showOutline` (default `false`) in
+   `SourceInspector`; a toggle in the top bar (`SourceView` TopBar via a new prop); when hidden, skip `OutlinePane`
+   + its drag handle so the source takes full inner width. Current split: `outlinePct`/`innerSplitRef` + OutlinePane
+   render (~663-685).
+
+7. **References panel = FILE navigation, not schema re-center (the meaty one).** Clicking a neighbour currently
+   re-centers the schema view (`setRefTarget`) — useless per the user. Make it jump into the loaded file with a
+   transient flash, reusing the `pendingScroll` machinery (`onOutlineNodeClick` / `jumpToInstance`):
+   - neighbour CATEGORY chip → scroll the source to that category's header.
+   - **"via &lt;key&gt;"** → scroll to where the CHILD item `_childCat.childField` appears (its declaration/column).
+   - Add `jumpToCategory(cat)` + `jumpToItem(cat, field)` in `SourceInspector`; pass to `ReferencePanel`; carry the
+     child item (cat+field) per neighbour. Keep instance-mode `→` (jump to the exact joined row).
+
+   **Underdetermined — settle at the start of next session:**
+   - (a) Not-in-file neighbours (the graph lists categories/items absent from THIS file): no line to jump to.
+     Recommend grey + non-jumping (tooltip still works), keep "Open in full graph"; alt is to hide them.
+   - (b) "via" precision: schema mode has no specific row → jump to the item's DECLARATION/column line. Confirm.
+   - (c) Panel after a jump: keep open (keep hopping) vs auto-close to reveal the file. Recommend keep open.
+   - (d) Drop schema re-center entirely (yes per "kinda useless") — deeper schema browse stays on "Open in full
+     graph". Confirm.
+   - (e) Instance mode: keep `→` for the exact row AND make the category chip jump to the category header. Confirm.
 
 ### Carried-over / deferred
 - Interaction map — deferred categories: `struct_site` / `struct_site_gen` (binding-site residues),
@@ -234,8 +346,9 @@ triangle) are gone.
 - Value-vs-dictionary validation (flag values violating an item's type regex / enum).
 - Retire "Hide preamble" (`PREAMBLE_PREFIXES` in `fold-tree.ts`) — now redundant with the Phase 6
   "Hide deposition" / "Structural only" presets; or re-point it at `classify.ts`.
-- The filter control crowds the toolbar at narrow split widths — give it its own row or a popover (it
-  already opens its rich preset panel on focus).
+- ~~The filter control crowds the toolbar at narrow split widths~~ — DONE (2026-06-28): the filter is now a
+  popover button, the pin moved to its own strip below the toolbar, and the toolbar buttons are `shrink-0
+  whitespace-nowrap`, so the bar no longer wraps.
 - Lens taxonomy is a heuristic over the dictionary's (coarse) own groups + a `struct_*` override; tune
   `classify.ts` as edge cases surface (e.g. `chem_comp_bond` is tagged Ligands, not Bonds).
 

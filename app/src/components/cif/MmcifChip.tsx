@@ -17,6 +17,7 @@ export function MmcifChip({
   target,
   variant = "chip",
   selected = false,
+  full = false,
   onToggle,
   onRemove,
   onDigDeeper,
@@ -25,6 +26,7 @@ export function MmcifChip({
   target: MmcifTarget;
   variant?: "chip" | "row" | "inline";
   selected?: boolean;
+  full?: boolean; // chip variant: render the full name (no max-width truncation)
   onToggle?: () => void;
   onRemove?: () => void;
   onDigDeeper?: () => void;
@@ -106,7 +108,7 @@ export function MmcifChip({
       onMouseLeave={onLeave}
       onClick={onToggle}
     >
-      <span className="max-w-[160px] truncate">{labelNode}</span>
+      <span className={full ? "" : "max-w-[160px] truncate"}>{labelNode}</span>
       {onRemove && (
         <button
           onClick={(e) => {

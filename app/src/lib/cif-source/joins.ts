@@ -7,9 +7,10 @@
 import type { Dictionary } from "@/lib/types";
 import { getCategory, type MolCifCategory, type MolCifFile } from "./types";
 
-// Reverse-scanning a category linear in its row count; skip the few huge ones (atom_site itself,
-// big anisotropy loops) so a click never hangs. Reported back so the UI can say it was skipped.
-const REVERSE_SCAN_ROW_CAP = 5000;
+// Reverse-scanning a category is linear in its row count. Grouping by category means we only count
+// (no per-row objects), so the cap can be generous; skip only absurdly large categories so a click
+// never hangs. Reported back so the UI can say it was skipped.
+const REVERSE_COUNT_CAP = 200000;
 
 export interface JoinHit {
   category: string;
@@ -19,10 +20,20 @@ export interface JoinHit {
   summary: string; // short human label for the joined row
 }
 
+// Reverse references grouped by referencing category: "atom_site · 147 rows via label_asym_id".
+// Carries a sample row (first match) for the hover preview + click-to-jump.
+export interface ReverseGroup {
+  category: string;
+  via: string; // the linking attribute on the referencing rows
+  count: number;
+  sampleRowIndex: number; // first matching row in that category
+  sampleSummary: string;
+}
+
 export interface JoinResult {
   forward: JoinHit[];
-  reverse: JoinHit[];
-  skipped: string[]; // categories not scanned because they exceed the row cap
+  reverse: ReverseGroup[];
+  skipped: string[]; // categories not scanned because they exceed the count cap
 }
 
 export interface InstanceRef {
@@ -122,18 +133,18 @@ interface Residue {
   authSeq: number | null;
 }
 
-// Reverse refs to a residue via positional columns. Returns one hit per matching annotation row.
+// Reverse refs to a residue via positional columns. Calls `add` once per matching annotation row.
 function residueReverseRefs(
   file: MolCifFile,
   blockIndex: number,
   res: Residue,
-  push: (h: JoinHit) => void,
+  add: (category: string, via: string, rowIndex: number, makeSummary: () => string) => void,
   skipped: string[],
 ): void {
   for (const m of RESIDUE_REFS) {
     const cat = getCategory(file, blockIndex, m.category);
     if (!cat) continue;
-    if (cat.rowCount > REVERSE_SCAN_ROW_CAP) {
+    if (cat.rowCount > REVERSE_COUNT_CAP) {
       skipped.push(m.category);
       continue;
     }
@@ -168,15 +179,7 @@ function residueReverseRefs(
             break;
           }
         }
-      if (hit) {
-        push({
-          category: m.category,
-          rowIndex: i,
-          via,
-          value: `${res.labelAsym} ${res.labelSeq ?? res.authSeq}`,
-          summary: summarizeRow(cat, m.category, i, m.category),
-        });
-      }
+      if (hit) add(m.category, via, i, () => summarizeRow(cat, m.category, i, m.category));
     }
   }
 }
@@ -189,10 +192,9 @@ export function computeInstanceJoins(
 ): JoinResult {
   const { blockIndex, category, rowIndex } = instance;
   const forward: JoinHit[] = [];
-  const reverse: JoinHit[] = [];
   const skipped: string[] = [];
   const cat = getCategory(file, blockIndex, category);
-  if (!cat) return { forward, reverse, skipped };
+  if (!cat) return { forward, reverse: [], skipped };
 
   // --- forward: each attribute with a dictionary parent -> the matching parent row ---
   const seenFwd = new Set<string>();
@@ -219,14 +221,24 @@ export function computeInstanceJoins(
     }
   }
 
-  // --- reverse: formal FK children that carry one of this row's identity values ---
+  // --- reverse: rows that reference this one, grouped by referencing category with a count and a
+  // sample row (first match) for the hover preview / click-to-jump. `seenRev` dedups a row reached
+  // through more than one of this row's identity attributes. ---
   const seenRev = new Set<string>();
-  const pushRev = (h: JoinHit) => {
-    const key = `${h.category}#${h.rowIndex}`;
+  const revGroups = new Map<string, ReverseGroup>();
+  const addRev = (category: string, via: string, row: number, makeSummary: () => string) => {
+    const key = `${category}#${row}`;
     if (seenRev.has(key)) return;
     seenRev.add(key);
-    reverse.push(h);
+    const g = revGroups.get(category);
+    if (g) {
+      g.count++;
+      return;
+    }
+    revGroups.set(category, { category, via, count: 1, sampleRowIndex: row, sampleSummary: makeSummary() });
   };
+
+  // formal FK children that carry one of this row's identity values
   const keyAttrs = (dict.categories[category]?.keys ?? []).map((k) => parseItemName(k).field);
   const identityAttrs = [...new Set([...keyAttrs, "id"])].filter((a) => cat.fieldNames.includes(a));
   for (const attr of identityAttrs) {
@@ -237,27 +249,19 @@ export function computeInstanceJoins(
       if (ccat === category) continue;
       const cc = getCategory(file, blockIndex, ccat);
       if (!cc) continue;
-      if (cc.rowCount > REVERSE_SCAN_ROW_CAP) {
+      if (cc.rowCount > REVERSE_COUNT_CAP) {
         if (!skipped.includes(ccat)) skipped.push(ccat);
         continue;
       }
       const cf = cc.getField(cfield);
       if (!cf) continue;
       for (let i = 0; i < cc.rowCount; i++) {
-        if (cf.str(i) === value) {
-          pushRev({
-            category: ccat,
-            rowIndex: i,
-            via: cfield,
-            value,
-            summary: summarizeRow(cc, ccat, i, `${cfield}=${value}`),
-          });
-        }
+        if (cf.str(i) === value) addRev(ccat, cfield, i, () => summarizeRow(cc, ccat, i, `${cfield}=${value}`));
       }
     }
   }
 
-  // --- reverse: residue-positional annotations (helix/strand/bond/site), for atom_site rows ---
+  // residue-positional annotations (helix/strand/bond/site), for atom_site rows
   if (category === "atom_site") {
     const res: Residue = {
       labelAsym: str(cat, "label_asym_id", rowIndex),
@@ -265,8 +269,8 @@ export function computeInstanceJoins(
       authAsym: str(cat, "auth_asym_id", rowIndex),
       authSeq: intOrNull(str(cat, "auth_seq_id", rowIndex)),
     };
-    residueReverseRefs(file, blockIndex, res, pushRev, skipped);
+    residueReverseRefs(file, blockIndex, res, addRev, skipped);
   }
 
-  return { forward, reverse, skipped };
+  return { forward, reverse: [...revGroups.values()], skipped };
 }

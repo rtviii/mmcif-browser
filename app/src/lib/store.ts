@@ -25,6 +25,7 @@ export interface RefInstance {
   blockIndex: number;
   category: string;
   rowIndex: number;
+  label?: string; // human label for the pinned row (e.g. "HOH 380 · O (A)"), shown in the header
 }
 export interface RefPanelState {
   target: RefTarget;

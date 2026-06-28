@@ -97,6 +97,7 @@ export default function SourceInspector({
   const [highlightRange, setHighlightRange] = useState<{ start: number; end: number } | null>(null);
   const [pinned, setPinned] = useState<PinnedTarget | null>(null);
   const [outlinePct, setOutlinePct] = useState(30);
+  const [showOutline, setShowOutline] = useState(false); // outline pane is opt-in (hidden by default)
   const sourceRef = useRef<SourceViewHandle>(null);
   const outlineRef = useRef<OutlinePaneHandle>(null);
   const innerSplitRef = useRef<HTMLDivElement>(null);
@@ -114,6 +115,10 @@ export default function SourceInspector({
     if (!doc || !parsed) return null;
     return buildFoldTree(doc, asMolCifFile(parsed.raw), mode);
   }, [doc, parsed, mode]);
+
+  // Categories actually present in the loaded file (across blocks) — drives greying of
+  // schema-only neighbours in the reference panel.
+  const presentCategories = useMemo(() => new Set(doc?.spans.map((s) => s.category) ?? []), [doc]);
 
   // Default view when a tree is (re)built: the source collapses the atom_site category (so it
   // doesn't dump tens of thousands of atom lines) plus preamble categories if that option is on;
@@ -691,8 +696,51 @@ export default function SourceInspector({
       return;
     }
     const ctx = rowContextForLine(pinned.anchorLine);
-    if (ctx) openRefPanel({ kind: "category", cat: ctx.category }, ctx);
+    if (ctx) openRefPanel({ kind: "category", cat: ctx.category }, { ...ctx, label: pinned.label });
     else if (cat) openRefPanel({ kind: "category", cat });
+  };
+
+  // Force-expand a span's category and scroll/flash a single source line. Shared by the
+  // category- and item-level jumps below (the reference panel's in-file navigation).
+  const scrollToCategoryLine = (si: number, line: number) => {
+    if (line < 0 || !tree) return;
+    const catId = tree.roots[si]?.id;
+    if (catId) {
+      setCollapsed((prev) => {
+        if (!prev.has(catId)) return prev;
+        const next = new Set(prev);
+        next.delete(catId);
+        return next;
+      });
+    }
+    setPendingScroll({ line, catId, flash: { start: line, end: line }, nonce: pendingNonce.current++ });
+  };
+
+  // Reference panel -> jump to a category header in the source.
+  const jumpToCategory = (category: string, blockIndex = 0) => {
+    if (!doc) return;
+    const si = doc.spans.findIndex((s) => s.category === category && s.block === blockIndex);
+    if (si < 0) return;
+    const span = doc.spans[si];
+    scrollToCategoryLine(si, span.kind === "loop" ? span.loopKeywordLine : span.start);
+  };
+
+  // Reference panel -> jump to a specific item's declaration. Precise in verbatim mode; in table
+  // mode loop decl lines are folded into the header, so pendingScroll falls back to the category.
+  const jumpToItem = (category: string, field: string, blockIndex = 0) => {
+    if (!doc) return;
+    const si = doc.spans.findIndex((s) => s.category === category && s.block === blockIndex);
+    if (si < 0) return;
+    const span = doc.spans[si];
+    let line = -1;
+    if (span.kind === "loop") {
+      const fi = span.fieldNames.indexOf(field);
+      if (fi >= 0) line = span.declLines[fi];
+    } else {
+      line = span.itemLines[field] ?? -1;
+    }
+    if (line < 0) return jumpToCategory(category, blockIndex); // unknown field -> header
+    scrollToCategoryLine(si, line);
   };
 
   const jumpToInstance = (blockIndex: number, category: string, rowIndex: number) => {
@@ -733,29 +781,39 @@ export default function SourceInspector({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ReferencePanel parsed={parsed} onJumpToInstance={jumpToInstance} />
+      <ReferencePanel
+        parsed={parsed}
+        presentCategories={presentCategories}
+        onJumpToInstance={jumpToInstance}
+        onJumpToCategory={jumpToCategory}
+        onJumpToItem={jumpToItem}
+      />
       {isText && doc && tree ? (
         <div ref={innerSplitRef} className="flex min-h-0 flex-1">
-          <div
-            className="flex min-w-0 flex-col border-r border-slate-200"
-            style={{ width: `${outlinePct}%` }}
-          >
-            <OutlinePane
-              ref={outlineRef}
-              rows={outlineFlat}
-              activeId={activeOutlineId}
-              pinnedId={pinned?.outlineId ?? null}
-              onToggle={onOutlineToggle}
-              onNodeEnter={onNodeEnter}
-              onNodeLeave={onStructLeave}
-              onNodeClick={onOutlineNodeClick}
-            />
-          </div>
-          <div
-            onMouseDown={startOutlineDrag}
-            title="drag to resize"
-            className="w-1 shrink-0 cursor-col-resize bg-slate-200 transition-colors hover:bg-indigo-400"
-          />
+          {showOutline && (
+            <>
+              <div
+                className="flex min-w-0 flex-col border-r border-slate-200"
+                style={{ width: `${outlinePct}%` }}
+              >
+                <OutlinePane
+                  ref={outlineRef}
+                  rows={outlineFlat}
+                  activeId={activeOutlineId}
+                  pinnedId={pinned?.outlineId ?? null}
+                  onToggle={onOutlineToggle}
+                  onNodeEnter={onNodeEnter}
+                  onNodeLeave={onStructLeave}
+                  onNodeClick={onOutlineNodeClick}
+                />
+              </div>
+              <div
+                onMouseDown={startOutlineDrag}
+                title="drag to resize"
+                className="w-1 shrink-0 cursor-col-resize bg-slate-200 transition-colors hover:bg-indigo-400"
+              />
+            </>
+          )}
           <div className="flex min-w-0 flex-1 flex-col">
             <SourceView
               ref={sourceRef}
@@ -766,6 +824,8 @@ export default function SourceInspector({
               tableModel={tableModel}
               kvTableModel={kvTableModel}
               onModeChange={setMode}
+              outlineShown={showOutline}
+              onToggleOutline={() => setShowOutline((v) => !v)}
               onToggleNoise={() => setHideNoise((v) => !v)}
               onToggleTable={() => setTableMode((v) => !v)}
               onTogglePreamble={onTogglePreamble}

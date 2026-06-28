@@ -44,7 +44,6 @@ export function CategoryFilter({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<Set<string>>(new Set()); // expanded lens cluster ids
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,26 +76,13 @@ export function CategoryFilter({
     onChange(selectedKeys.has(key(e)) ? selected.filter((s) => key(s) !== key(e)) : [...selected, e]);
   const remove = (k: string) => onChange(selected.filter((s) => key(s) !== k));
 
-  // Lens cluster actions over category chips (item chips are left untouched).
-  const lensActive = (cats: string[]) => cats.length > 0 && cats.every((c) => selectedCats.has(c));
-  const lensSome = (cats: string[]) => cats.some((c) => selectedCats.has(c));
-  const toggleCats = (cats: string[]) => {
-    if (lensActive(cats)) {
-      const drop = new Set(cats);
-      onChange(selected.filter((s) => !(s.kind === "category" && drop.has(s.label))));
-    } else {
-      const add = cats.filter((c) => !selectedCats.has(c)).map(catEntry);
-      onChange([...selected, ...add]);
-    }
-  };
+  // Lenses are mutually-exclusive radios: clicking one REPLACES the selection with exactly its
+  // categories; clicking the active lens again clears the filter. `exactLens` = the selection is
+  // precisely this lens's category set (so only one lens ever reads as active).
   const setCats = (cats: string[]) => onChange(cats.map(catEntry));
-  const toggleExpand = (id: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const exactLens = (cats: string[]) =>
+    cats.length > 0 && cats.length === selectedCats.size && cats.every((c) => selectedCats.has(c));
+  const pickLens = (cats: string[]) => (exactLens(cats) ? onChange([]) : setCats(cats));
 
   const structural = presets?.lenses.filter((l) => l.tier === "structural") ?? [];
   const context = presets?.lenses.filter((l) => l.tier === "context") ?? [];
@@ -163,52 +149,40 @@ export function CategoryFilter({
               />
             ) : presets ? (
               <>
-                <Tier title="Structural">
-                  {structural.map((l) => (
-                    <LensSection
-                      key={l.id}
-                      lens={l}
-                      expanded={expanded.has(l.id)}
-                      onToggleExpand={() => toggleExpand(l.id)}
-                      active={lensActive(l.categories)}
-                      some={lensSome(l.categories)}
-                      onToggleAll={() => toggleCats(l.categories)}
-                      selectedCats={selectedCats}
-                      onToggleCat={(c) => toggleEntry(catEntry(c))}
+                {/* mutually-exclusive lens radios + cross-cutting presets */}
+                <div className="border-b border-slate-100 p-2">
+                  <LensRow title="Structural" lenses={structural} exactLens={exactLens} onPick={pickLens} />
+                  <LensRow title="Context" lenses={context} exactLens={exactLens} onPick={pickLens} />
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                    <button
+                      onClick={() => setCats(presets.structuralOnly)}
+                      className="rounded border border-teal-600/40 bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-800 hover:bg-teal-100"
+                    >
+                      Structural only
+                    </button>
+                    <button
+                      onClick={() => setCats(presets.hideDeposition)}
+                      className="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50"
+                    >
+                      Hide deposition
+                    </button>
+                    <span className="ml-auto text-[10px] text-slate-400">Pick a lens, or check categories below.</span>
+                  </div>
+                </div>
+                {/* full category list */}
+                <div className="px-2 py-1">
+                  <div className="px-1.5 py-1 text-[9px] uppercase tracking-wide text-slate-400">
+                    All categories <span className="text-slate-300">({categories.length})</span>
+                  </div>
+                  {categories.map((c) => (
+                    <MmcifChip
+                      key={c}
+                      target={{ kind: "category", cat: c }}
+                      variant="row"
+                      selected={selectedCats.has(c)}
+                      onToggle={() => toggleEntry(catEntry(c))}
                     />
                   ))}
-                </Tier>
-                <Tier title="Context">
-                  {context.map((l) => (
-                    <LensSection
-                      key={l.id}
-                      lens={l}
-                      expanded={expanded.has(l.id)}
-                      onToggleExpand={() => toggleExpand(l.id)}
-                      active={lensActive(l.categories)}
-                      some={lensSome(l.categories)}
-                      onToggleAll={() => toggleCats(l.categories)}
-                      selectedCats={selectedCats}
-                      onToggleCat={(c) => toggleEntry(catEntry(c))}
-                    />
-                  ))}
-                </Tier>
-                <div className="flex flex-wrap items-center gap-1 p-2">
-                  <button
-                    onClick={() => setCats(presets.structuralOnly)}
-                    className="rounded border border-teal-600/40 bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-800 hover:bg-teal-100"
-                  >
-                    Structural only
-                  </button>
-                  <button
-                    onClick={() => setCats(presets.hideDeposition)}
-                    className="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50"
-                  >
-                    Hide deposition
-                  </button>
-                  <span className="ml-auto text-[10px] text-slate-400">
-                    Click a lens to add its categories; expand to pick individually.
-                  </span>
                 </div>
               </>
             ) : null}
@@ -225,77 +199,43 @@ const itemTarget = (label: string, category: string) => {
   return { kind: "item" as const, cat: category, field };
 };
 
-function Tier({ title, children }: { title: string; children: React.ReactNode }) {
-  if (!children || (Array.isArray(children) && children.every((c) => !c))) return null;
-  return (
-    <div className="border-b border-slate-100">
-      <div className="px-2 pt-2 text-[9px] font-semibold uppercase tracking-wide text-slate-400">{title}</div>
-      <div className="py-1">{children}</div>
-    </div>
-  );
-}
-
-function LensSection({
-  lens,
-  expanded,
-  onToggleExpand,
-  active,
-  some,
-  onToggleAll,
-  selectedCats,
-  onToggleCat,
+// A labeled wrap-row of mutually-exclusive lens pills. Clicking a pill replaces the selection
+// (or clears it if it was the active lens) via onPick.
+function LensRow({
+  title,
+  lenses,
+  exactLens,
+  onPick,
 }: {
-  lens: LensPreset;
-  expanded: boolean;
-  onToggleExpand: () => void;
-  active: boolean;
-  some: boolean;
-  onToggleAll: () => void;
-  selectedCats: Set<string>;
-  onToggleCat: (c: string) => void;
+  title: string;
+  lenses: LensPreset[];
+  exactLens: (cats: string[]) => boolean;
+  onPick: (cats: string[]) => void;
 }) {
-  const selCount = lens.categories.filter((c) => selectedCats.has(c)).length;
+  if (lenses.length === 0) return null;
   return (
-    <div>
-      <div className="flex items-center gap-1.5 px-2 py-1">
-        <button
-          onClick={onToggleExpand}
-          className="flex h-4 w-4 shrink-0 items-center justify-center text-[8px] text-slate-400 hover:text-slate-700"
-          title={expanded ? "collapse" : "expand"}
-        >
-          {expanded ? "▼" : "▶"}
-        </button>
-        <button
-          onClick={onToggleAll}
-          title={lens.blurb}
-          className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${
-            active
-              ? "border-indigo-500 bg-indigo-500 text-white"
-              : some
-                ? "border-indigo-400 bg-indigo-50 text-indigo-700"
-                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-          }`}
-        >
-          {lens.short} <span className={active ? "text-indigo-100" : "text-slate-400"}>· {lens.categories.length}</span>
-        </button>
-        <span className="min-w-0 flex-1 truncate text-[10px] text-slate-400">
-          {selCount > 0 && !active ? `${selCount} selected · ` : ""}
-          {lens.blurb}
-        </span>
+    <div className="mb-1.5 last:mb-0">
+      <div className="mb-1 text-[9px] font-semibold uppercase tracking-wide text-slate-400">{title}</div>
+      <div className="flex flex-wrap gap-1">
+        {lenses.map((l) => {
+          const active = exactLens(l.categories);
+          return (
+            <button
+              key={l.id}
+              onClick={() => onPick(l.categories)}
+              title={l.blurb}
+              className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${
+                active
+                  ? "border-indigo-500 bg-indigo-500 text-white"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {l.short}{" "}
+              <span className={active ? "text-indigo-100" : "text-slate-400"}>· {l.categories.length}</span>
+            </button>
+          );
+        })}
       </div>
-      {expanded && (
-        <div className="pb-1 pl-7 pr-2">
-          {lens.categories.map((c) => (
-            <MmcifChip
-              key={c}
-              target={{ kind: "category", cat: c }}
-              variant="row"
-              selected={selectedCats.has(c)}
-              onToggle={() => onToggleCat(c)}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
