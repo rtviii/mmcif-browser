@@ -20,6 +20,7 @@ import {
   type LoopTable,
 } from "@/lib/cif-source/table";
 import { asMolCifFile, type MolCifCategory } from "@/lib/cif-source/types";
+import type { ExampleSignature } from "@/lib/molstar/examples";
 import type { MolstarViewer } from "@/lib/molstar/viewer";
 import {
   buildAtomQuery,
@@ -78,12 +79,14 @@ export default function SourceInspector({
   viewer,
   toolbarSlot,
   active,
+  signature,
 }: {
   file: LoadedFile | null;
   parsed: ParsedCif | null;
   viewer: MolstarViewer | null;
   toolbarSlot: HTMLElement | null; // the pane's full-width top bar; the view controls portal into it
   active: boolean; // only the active tab renders the (global) reference panel
+  signature?: ExampleSignature | null; // example's encoding category -> jump chip in the top bar
 }) {
   const setHoverDef = useStore((s) => s.setHoverDef);
   const scheduleClearHoverDef = useStore((s) => s.scheduleClearHoverDef);
@@ -403,6 +406,36 @@ export default function SourceInspector({
     });
   }, [collapsePreamble, tree]);
 
+  // The full physical line span of the parsed field/record a line belongs to: a loop row's
+  // (possibly wrapped / ;-multiline) lines, or a key-value item's declaration + multiline value.
+  // Lets hover/pin highlight cover the whole parsed value, not just the one clicked line.
+  const rowLineRange = (lineIndex: number): { start: number; end: number } => {
+    if (!doc) return { start: lineIndex, end: lineIndex };
+    const si = doc.lineToSpan[lineIndex];
+    if (si < 0) return { start: lineIndex, end: lineIndex };
+    const span = doc.spans[si];
+    if (span.kind === "loop" && span.category !== "atom_site") {
+      const map = rowMaps.get(si);
+      const row = map?.get(lineIndex);
+      if (map && row !== undefined) {
+        let start = lineIndex;
+        let end = lineIndex;
+        while (map.get(start - 1) === row) start--;
+        while (map.get(end + 1) === row) end++;
+        return { start, end };
+      }
+    }
+    if (span.kind === "kv") {
+      // a kv item is its declaration line + any following ;...; continuation (all marked inText)
+      let start = lineIndex;
+      let end = lineIndex;
+      while (start > span.start && doc.lines[start]?.inText) start--;
+      while (end < span.end && doc.lines[end + 1]?.inText) end++;
+      return { start, end };
+    }
+    return { start: lineIndex, end: lineIndex };
+  };
+
   // --- 3D linkage (hover -> highlight, click -> focus) -----------------------------
   const rafRef = useRef<number | null>(null);
   const throttle = (fn: () => void) => {
@@ -631,10 +664,11 @@ export default function SourceInspector({
   const onRowClick = (lineIndex: number) => {
     const r = resolveLine(lineIndex);
     const cat = doc ? doc.spans[doc.lineToSpan[lineIndex]]?.category : undefined;
+    const range = rowLineRange(lineIndex); // pin the whole parsed field, not just the clicked line
     togglePin({
-      id: `line:${lineIndex}`,
-      anchorLine: lineIndex,
-      range: { start: lineIndex, end: lineIndex },
+      id: `line:${range.start}`,
+      anchorLine: range.start,
+      range,
       headerId: null,
       outlineId: null,
       label: r?.label ?? cat ?? `line ${lineIndex + 1}`,
@@ -826,8 +860,23 @@ export default function SourceInspector({
         doc &&
         tree &&
         createPortal(
-          <InspectorToolbar
-            doc={doc}
+          <>
+            {signature && (
+              <button
+                onClick={() =>
+                  signature.field ? jumpToItem(signature.category, signature.field) : jumpToCategory(signature.category)
+                }
+                title={signature.note}
+                className="shrink-0 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-amber-800 hover:bg-amber-100"
+              >
+                encodes{" "}
+                <span className="font-mono">
+                  {signature.field ? `${signature.category}.${signature.field}` : signature.category}
+                </span>
+              </button>
+            )}
+            <InspectorToolbar
+              doc={doc}
             rowCount={visibleShown.length}
             mode={mode}
             onModeChange={setMode}
@@ -850,7 +899,8 @@ export default function SourceInspector({
             onPinJump={jumpToPinned}
             onPinClear={clearPin}
             onPinReferences={pinReferences}
-          />,
+            />
+          </>,
           toolbarSlot,
         )}
       {isText && doc && tree ? (
@@ -898,6 +948,7 @@ export default function SourceInspector({
               onHeaderClick={onHeaderClick}
               onRowContextMenu={onRowContextMenu}
               onHeaderContextMenu={onHeaderContextMenu}
+              fieldRange={rowLineRange}
               onTopLineChange={onTopLineChange}
               highlightRange={highlightRange}
               pinnedRange={pinned?.range ?? null}

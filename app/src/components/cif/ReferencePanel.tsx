@@ -53,14 +53,31 @@ function ExpandableValue({ value, highlight }: { value: string; highlight?: bool
   const color = highlight ? "font-semibold text-amber-800" : "text-slate-700";
   const long = value.length > 90 || value.includes("\n");
   if (!long) return <span className={`break-all font-mono ${color}`}>{value}</span>;
+  if (open) {
+    // Expanded: a bounded, scrollable box so a long sequence can't blow up the panel height.
+    return (
+      <div className="font-mono">
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="mb-0.5 text-[9px] font-semibold uppercase tracking-wide text-indigo-500 hover:text-indigo-700"
+        >
+          collapse
+        </button>
+        <div
+          className={`max-h-[240px] overflow-auto whitespace-pre-wrap break-all rounded border border-slate-200 bg-white p-1 leading-relaxed ${color}`}
+        >
+          {value}
+        </div>
+      </div>
+    );
+  }
   return (
     <button
       type="button"
-      onClick={() => setOpen((v) => !v)}
-      title={open ? "collapse" : "show full value"}
-      className={`w-full cursor-pointer break-all text-left font-mono hover:text-indigo-700 ${color} ${
-        open ? "whitespace-pre-wrap" : "line-clamp-2"
-      }`}
+      onClick={() => setOpen(true)}
+      title="show full value"
+      className={`line-clamp-2 w-full cursor-pointer break-all text-left font-mono hover:text-indigo-700 ${color}`}
     >
       {value}
     </button>

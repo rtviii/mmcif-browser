@@ -1,3 +1,4 @@
+import type { ColorTheme } from "molstar/lib/mol-theme/color";
 import { Color } from "molstar/lib/mol-util/color";
 
 // Illustrative "demo" look lifted from ~/dev/fend_tubulinxyz (postprocessing-config.ts):
@@ -30,3 +31,22 @@ export const WHITE_BACKGROUND = Color(0xffffff);
 // Components to render as ball-and-stick by default (everything except water/coarse, so the
 // view isn't dominated by scattered solvent oxygens).
 export const BALL_AND_STICK_COMPONENTS = ["polymer", "ligand", "ion", "branched", "lipid"] as const;
+
+// Polymer-only component list for trace-based representations (cartoon / putty) that have no
+// meaning on isolated ligands or ions.
+export const POLYMER_COMPONENTS = ["polymer"] as const;
+
+// How to render a loaded structure: which representation + colour theme. The default reproduces
+// the app's flat ball-and-stick look; the examples drawer overrides it per structure to showcase
+// a particular heterogeneity feature (B-factor colouring, ANISOU ellipsoids, etc.).
+export type ExampleRepresentation = "ball-and-stick" | "ellipsoid" | "putty" | "cartoon" | "spacefill";
+
+export interface StructureView {
+  representation: ExampleRepresentation;
+  colorTheme: ColorTheme.BuiltIn | "alt-loc"; // "alt-loc" is our custom theme registered at viewer init
+}
+
+export const DEFAULT_VIEW: StructureView = { representation: "ball-and-stick", colorTheme: "element-symbol" };
+
+// Representations that only render on the polymer trace; for these we skip ligand/ion/etc.
+export const POLYMER_ONLY_REPRESENTATIONS: ReadonlyArray<ExampleRepresentation> = ["cartoon", "putty"];

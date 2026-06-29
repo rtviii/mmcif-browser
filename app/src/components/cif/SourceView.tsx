@@ -64,6 +64,8 @@ export interface SourceViewProps {
   // Right-click -> open the references panel for the row / category (instead of the browser menu).
   onRowContextMenu?: (lineIndex: number) => void;
   onHeaderContextMenu?: (node: FoldNode) => void;
+  // The full parsed-field line span for a line, so hover highlight covers the whole multiline value.
+  fieldRange?: (lineIndex: number) => { start: number; end: number };
   // Outline sync: report the top visible source line on scroll; flash a line range on click-to.
   onTopLineChange?: (lineIndex: number) => void;
   highlightRange?: { start: number; end: number } | null;
@@ -110,6 +112,32 @@ const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function Source
   // horizontal scroll offset so the pinned column headers stay aligned with the data columns.
   const [sticky, setSticky] = useState<{ si: number; category: string; isLoop: boolean } | null>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
+
+  // Hover highlight covering the whole parsed field (all lines of a multiline value), not just the
+  // line under the cursor. A short grace-clear avoids a flicker when moving between a field's lines.
+  const [hoverRange, setHoverRange] = useState<{ start: number; end: number } | null>(null);
+  const hoverClearRef = useRef<number | null>(null);
+  const cancelHoverClear = () => {
+    if (hoverClearRef.current) {
+      clearTimeout(hoverClearRef.current);
+      hoverClearRef.current = null;
+    }
+  };
+  const handleEnter = (row: VisibleRow) => {
+    cancelHoverClear();
+    if (row.kind === "line") {
+      setHoverRange(props.fieldRange ? props.fieldRange(row.lineIndex) : { start: row.lineIndex, end: row.lineIndex });
+      props.onRowEnter(row.lineIndex);
+    } else {
+      setHoverRange(null);
+      props.onNodeEnter(row.node);
+    }
+  };
+  const handleLeave = () => {
+    cancelHoverClear();
+    hoverClearRef.current = window.setTimeout(() => setHoverRange(null), 40);
+    props.onStructLeave();
+  };
 
   // Resolve the topmost visible row to its category. Returns null at a real header row (the header
   // is already on screen, so no duplicate sticky is needed).
@@ -176,8 +204,6 @@ const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function Source
         <div style={{ height: virtualizer.getTotalSize(), width: contentWidth, position: "relative" }}>
           {virtualizer.getVirtualItems().map((vi) => {
             const row = visible[vi.index];
-            const enter = () =>
-              row.kind === "line" ? props.onRowEnter(row.lineIndex) : props.onNodeEnter(row.node);
             const highlighted =
               row.kind === "line" &&
               props.highlightRange != null &&
@@ -189,18 +215,25 @@ const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function Source
                   row.lineIndex >= props.pinnedRange.start &&
                   row.lineIndex <= props.pinnedRange.end
                 : props.pinnedHeaderId != null && row.node.id === props.pinnedHeaderId;
+            const hovered =
+              row.kind === "line" &&
+              hoverRange != null &&
+              row.lineIndex >= hoverRange.start &&
+              row.lineIndex <= hoverRange.end;
             const rowBg = highlighted
               ? "bg-amber-100"
               : pinned
                 ? "bg-indigo-50 shadow-[inset_3px_0_0_0_#6366f1]"
-                : "hover:bg-slate-50";
+                : hovered
+                  ? "bg-slate-100"
+                  : "hover:bg-slate-50";
             return (
               <div
                 key={vi.key}
                 className={`absolute left-0 flex items-center ${rowBg}`}
                 style={{ top: 0, height: vi.size, transform: `translateY(${vi.start}px)`, width: contentWidth }}
-                onMouseEnter={enter}
-                onMouseLeave={props.onStructLeave}
+                onMouseEnter={() => handleEnter(row)}
+                onMouseLeave={handleLeave}
                 onClick={
                   row.kind === "line" ? () => props.onRowClick(row.lineIndex) : () => props.onHeaderClick?.(row.node)
                 }

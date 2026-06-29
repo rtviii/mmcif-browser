@@ -9,12 +9,40 @@ import { createPluginUI } from "molstar/lib/mol-plugin-ui";
 import { PluginUIContext } from "molstar/lib/mol-plugin-ui/context";
 import { renderReact18 } from "molstar/lib/mol-plugin-ui/react18";
 import { PluginUISpec } from "molstar/lib/mol-plugin-ui/spec";
+import {
+  clearStructureWiggle,
+  setStructureWiggleFromUncertainty,
+} from "molstar/lib/mol-plugin-state/helpers/structure-wiggle";
+import {
+  StructureSelectionFromExpression,
+  TransformStructureConformation,
+} from "molstar/lib/mol-plugin-state/transforms/model";
 import { PluginCommands } from "molstar/lib/mol-plugin/commands";
 import { StateSelection } from "molstar/lib/mol-state";
-import type { Color } from "molstar/lib/mol-util/color";
+import { Color } from "molstar/lib/mol-util/color";
+import type { ColorTheme } from "molstar/lib/mol-theme/color";
+import { AltLocColorThemeProvider } from "./altloc-theme";
 import { LabelManager } from "./labels";
+import { buildTlsGroupExpression } from "./queries";
+import { setSelectionWiggleFalloff } from "./wiggle-falloff";
 import { viewerSpec } from "./spec";
-import { BALL_AND_STICK_COMPONENTS, STYLIZED_POSTPROCESSING, WHITE_BACKGROUND } from "./style";
+import {
+  BALL_AND_STICK_COMPONENTS,
+  DEFAULT_VIEW,
+  POLYMER_COMPONENTS,
+  POLYMER_ONLY_REPRESENTATIONS,
+  type StructureView,
+  STYLIZED_POSTPROCESSING,
+  WHITE_BACKGROUND,
+} from "./style";
+import { type TlsGroup, TLS_EXAGGERATION, TLS_MAX_ANGLE_DEG, TLS_PALETTE, tlsTransformParams } from "./tls";
+
+interface TlsRef {
+  ref: string;
+  axis: Vec3;
+  origin: Vec3;
+  amp: number;
+}
 
 export interface PickInfo {
   chainId: string;
@@ -32,6 +60,13 @@ export class MolstarViewer {
   ctx: PluginUIContext | null = null;
   private initPromise: Promise<void> | null = null;
   private labelManager: LabelManager | null = null;
+  // Frame scrubbing: the state ref of the model-from-trajectory transform (whose modelIndex param we
+  // update to switch frames) and the trajectory's total frame count.
+  private modelRef: string | null = null;
+  private modelCount = 1;
+  // TLS libration: one transformable sub-structure per rigid body, plus the running animation handle.
+  private tlsRefs: TlsRef[] = [];
+  private tlsRaf: number | null = null;
 
   async init(container: HTMLElement, spec: PluginUISpec = viewerSpec): Promise<void> {
     if (this.ctx) return;
@@ -42,6 +77,10 @@ export class MolstarViewer {
 
   private async doInit(container: HTMLElement, spec: PluginUISpec): Promise<void> {
     this.ctx = await createPluginUI({ target: container, spec, render: renderReact18 });
+    // Register our custom alt-loc color theme so `color: 'alt-loc'` resolves on representations.
+    if (!this.ctx.representation.structure.themes.colorThemeRegistry.has(AltLocColorThemeProvider)) {
+      this.ctx.representation.structure.themes.colorThemeRegistry.add(AltLocColorThemeProvider);
+    }
     this.applyDefaultStyling();
   }
 
@@ -70,7 +109,10 @@ export class MolstarViewer {
 
   // --- data loading (parses + applies a flat ball-and-stick representation) ---
 
-  async load(data: string | Uint8Array, opts: { label?: string } = {}): Promise<void> {
+  async load(
+    data: string | Uint8Array,
+    opts: { label?: string; view?: StructureView; tlsGroups?: TlsGroup[] } = {},
+  ): Promise<void> {
     if (!this.ctx) throw new Error("Viewer not initialized");
     const raw = await this.ctx.builders.data.rawData({
       data: data as string | Uint8Array<ArrayBuffer>,
@@ -79,10 +121,11 @@ export class MolstarViewer {
     if (!this.ctx) throw new Error("Viewer disposed during load");
     const trajectory = await this.ctx.builders.structure.parseTrajectory(raw, "mmcif");
     if (!this.ctx) throw new Error("Viewer disposed during load");
-    await this.buildBallAndStick(trajectory);
+    if (opts.tlsGroups && opts.tlsGroups.length) await this.buildTls(trajectory, opts.tlsGroups);
+    else await this.buildRepresentation(trajectory, opts.view ?? DEFAULT_VIEW);
   }
 
-  async loadFromUrl(url: string, opts: { binary?: boolean; label?: string } = {}): Promise<void> {
+  async loadFromUrl(url: string, opts: { binary?: boolean; label?: string; view?: StructureView } = {}): Promise<void> {
     if (!this.ctx) throw new Error("Viewer not initialized");
     const raw = await this.ctx.builders.data.download({
       url,
@@ -92,31 +135,203 @@ export class MolstarViewer {
     if (!this.ctx) throw new Error("Viewer disposed during load");
     const trajectory = await this.ctx.builders.structure.parseTrajectory(raw, "mmcif");
     if (!this.ctx) throw new Error("Viewer disposed during load");
-    await this.buildBallAndStick(trajectory);
+    await this.buildRepresentation(trajectory, opts.view ?? DEFAULT_VIEW);
   }
 
-  // Build the structure and render every non-solvent component as flat ball-and-stick
-  // (the user's default look) rather than Mol*'s cartoon-based preset.
+  // Build the structure from the trajectory's first model and render it with the requested
+  // representation + colour theme (defaulting to the app's flat ball-and-stick look). Trace-based
+  // representations (cartoon / putty) are restricted to the polymer; everything else covers all
+  // non-solvent components. Records the model transform ref + frame count for frame scrubbing.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async buildBallAndStick(trajectory: any): Promise<void> {
+  private async buildRepresentation(trajectory: any, view: StructureView): Promise<void> {
     const ctx = this.ctx;
     if (!ctx) return;
+    this.modelCount = trajectory?.data?.frameCount ?? 1;
     const model = await ctx.builders.structure.createModel(trajectory);
     if (!this.ctx) return;
+    this.modelRef = model.ref;
     const structure = await ctx.builders.structure.createStructure(model);
     if (!this.ctx) return;
-    for (const kind of BALL_AND_STICK_COMPONENTS) {
+    const components = POLYMER_ONLY_REPRESENTATIONS.includes(view.representation)
+      ? POLYMER_COMPONENTS
+      : BALL_AND_STICK_COMPONENTS;
+    for (const kind of components) {
       const comp = await ctx.builders.structure.tryCreateComponentStatic(structure, kind);
       if (!comp || !this.ctx) continue;
       await ctx.builders.structure.representation.addRepresentation(comp, {
-        type: "ball-and-stick",
+        type: view.representation,
         typeParams: { ignoreLight: true },
-        color: "element-symbol",
+        color: view.colorTheme as ColorTheme.BuiltIn,
       });
     }
   }
 
+  // --- multi-model frame scrubbing ---
+
+  getModelCount(): number {
+    return this.modelCount;
+  }
+
+  // Switch the visible frame by updating the model-from-trajectory transform's (zero-based)
+  // modelIndex; Mol* recomputes the structure + representations downstream automatically.
+  async setModelIndex(index: number): Promise<void> {
+    if (!this.ctx || !this.modelRef) return;
+    await this.ctx.state.data
+      .build()
+      .to(this.modelRef)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .update((old: any) => ({ ...old, modelIndex: index }))
+      .commit();
+  }
+
+  // --- TLS rigid-body libration ---
+
+  // Render each TLS group as its own sub-structure (so it can be moved independently), coloured per
+  // group, with a transform-structure-conformation node we animate. Replaces the default
+  // representation; called instead of buildRepresentation when TLS groups are supplied.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async buildTls(trajectory: any, groups: TlsGroup[]): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    this.modelCount = trajectory?.data?.frameCount ?? 1;
+    const model = await ctx.builders.structure.createModel(trajectory);
+    if (!this.ctx) return;
+    this.modelRef = model.ref;
+    const structure = await ctx.builders.structure.createStructure(model);
+    if (!this.ctx) return;
+    this.tlsRefs = [];
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i];
+      const b = ctx.state.data.build().to(structure.ref);
+      const sel = b.apply(StructureSelectionFromExpression, {
+        expression: buildTlsGroupExpression(g.chain, g.ranges),
+        label: `TLS ${g.id}`,
+      });
+      const xf = sel.apply(TransformStructureConformation, tlsTransformParams(g.axis, 0, g.origin));
+      await b.commit();
+      if (!this.ctx) return;
+      await ctx.builders.structure.representation.addRepresentation(xf.ref, {
+        type: "ball-and-stick",
+        typeParams: { ignoreLight: true },
+        color: "uniform",
+        colorParams: { value: Color(TLS_PALETTE[i % TLS_PALETTE.length]) },
+      });
+      this.tlsRefs.push({ ref: xf.ref, axis: g.axis, origin: g.origin, amp: g.amplitudeDeg });
+    }
+  }
+
+  hasTls(): boolean {
+    return this.tlsRefs.length > 0;
+  }
+
+  // Animate every TLS group rocking about its principal libration axis (a gentle shared sinusoid;
+  // amplitudes per group come from the L tensor, exaggerated for visibility).
+  startTlsAnimation(): void {
+    if (this.tlsRaf !== null || !this.tlsRefs.length || !this.ctx) return;
+    const t0 = performance.now();
+    const freq = 0.25; // Hz
+    const tick = () => {
+      if (this.tlsRaf === null) return;
+      const ctx = this.ctx;
+      if (!ctx) {
+        this.tlsRaf = null;
+        return;
+      }
+      const phase = Math.sin(2 * Math.PI * freq * ((performance.now() - t0) / 1000));
+      const b = ctx.state.data.build();
+      for (const g of this.tlsRefs) {
+        const amp = Math.min(TLS_EXAGGERATION * g.amp, TLS_MAX_ANGLE_DEG);
+        b.to(g.ref).update(tlsTransformParams(g.axis, amp * phase, g.origin));
+      }
+      void b.commit().then(() => {
+        if (this.tlsRaf !== null) this.tlsRaf = requestAnimationFrame(tick);
+      });
+    };
+    this.tlsRaf = requestAnimationFrame(tick);
+  }
+
+  stopTlsAnimation(resetToRest = true): void {
+    if (this.tlsRaf !== null) {
+      cancelAnimationFrame(this.tlsRaf);
+      this.tlsRaf = null;
+    }
+    if (resetToRest && this.ctx && this.tlsRefs.length) {
+      const b = this.ctx.state.data.build();
+      for (const g of this.tlsRefs) b.to(g.ref).update(tlsTransformParams(g.axis, 0, g.origin));
+      void b.commit();
+    }
+  }
+
+  isTlsAnimating(): boolean {
+    return this.tlsRaf !== null;
+  }
+
+  // --- B-factor / selection "wiggle" (Mol*'s shader thermal animation) ---
+  //
+  // Unlike a per-atom random displacement (which tears bonds apart), Mol*'s wiggle samples one smooth
+  // 3D noise field at each atom's position with a low spatial frequency, so neighbouring atoms move
+  // together. It runs in the vertex shader (auto-animating, no per-frame state commits). Per-atom
+  // amplitude comes from a loci "bundle": from B-factor for the whole structure, or from a selection.
+
+  private wiggleComponents() {
+    if (!this.ctx) return [];
+    return this.ctx.managers.structure.hierarchy.current.structures.flatMap((s) => s.components);
+  }
+
+  // Global wiggle animation params: spatially-correlated ('position' mode), gentle speed; the base
+  // amplitude is kept at 0 so only atoms covered by a bundle actually move.
+  private async setWiggleGlobal(amplitude: number): Promise<void> {
+    if (!this.ctx) return;
+    const options = this.ctx.managers.structure.component.state.options;
+    await this.ctx.managers.structure.component.setOptions({
+      ...options,
+      animation: {
+        ...options.animation,
+        wiggleMode: "position",
+        wiggleSpeed: 7,
+        wiggleFrequency: 0.2,
+        wiggleAmplitude: amplitude,
+        tumbleAmplitude: 0,
+      },
+    });
+  }
+
+  // Wiggle every atom with per-atom amplitude scaled by its B-factor / RMSF (Mol*'s "Uncertainty").
+  async applyUncertaintyWiggle(scale = 1.2): Promise<void> {
+    if (!this.ctx) return;
+    const comps = this.wiggleComponents();
+    await this.setWiggleGlobal(0);
+    await clearStructureWiggle(this.ctx, comps);
+    await setStructureWiggleFromUncertainty(this.ctx, comps, scale);
+  }
+
+  // Wiggle the currently selected atoms (whatever is pinned / selected), tapering the amplitude
+  // outward so bonds at the selection boundary stretch instead of snapping.
+  async wiggleSelection(amplitude = 1): Promise<void> {
+    if (!this.ctx) return;
+    const root = this.getCurrentStructure();
+    if (!root) return;
+    const sel = this.ctx.managers.structure.selection.getLoci(root);
+    if (!StructureElement.Loci.is(sel) || StructureElement.Loci.isEmpty(sel)) return;
+    await this.setWiggleGlobal(0);
+    await setSelectionWiggleFalloff(this.ctx, this.wiggleComponents(), root, sel, amplitude);
+  }
+
+  async clearWiggle(): Promise<void> {
+    if (!this.ctx) return;
+    await clearStructureWiggle(this.ctx, this.wiggleComponents());
+    await this.setWiggleGlobal(0);
+  }
+
+  hasSelection(): boolean {
+    return !!this.ctx && this.ctx.managers.structure.selection.elementCount() > 0;
+  }
+
   async clear(): Promise<void> {
+    this.stopTlsAnimation(false);
+    this.tlsRefs = [];
+    this.modelRef = null;
+    this.modelCount = 1;
     if (!this.ctx) return;
     await PluginCommands.State.RemoveObject(this.ctx, {
       state: this.ctx.state.data,
@@ -254,6 +469,8 @@ export class MolstarViewer {
   }
 
   dispose(): void {
+    this.stopTlsAnimation(false);
+    this.tlsRefs = [];
     this.labelManager?.dispose();
     this.labelManager = null;
     this.ctx?.dispose();

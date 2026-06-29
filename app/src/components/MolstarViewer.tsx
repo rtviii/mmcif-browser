@@ -3,20 +3,32 @@ import "molstar/build/viewer/molstar.css";
 import { useEffect, useRef } from "react";
 import { useMolstarViewer } from "@/hooks/useMolstarViewer";
 import type { MolstarViewer as MolstarViewerInstance } from "@/lib/molstar/viewer";
+import type { StructureView } from "@/lib/molstar/style";
+import type { TlsGroup } from "@/lib/molstar/tls";
 
 // React boundary around the pure MolstarViewer wrapper: renders the container,
-// manages lifecycle via the hook, and (re)loads whenever `data` changes.
+// manages lifecycle via the hook, and (re)loads whenever `data` (or the requested view) changes.
 export default function MolstarViewer({
   data,
   binary,
+  view,
+  tlsGroups,
   onReady,
+  onLoaded,
 }: {
   data: string | Uint8Array | null;
   binary: boolean;
+  view?: StructureView;
+  tlsGroups?: TlsGroup[] | null;
   onReady?: (viewer: MolstarViewerInstance | null) => void;
+  onLoaded?: (info: { modelCount: number }) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { viewer, ready } = useMolstarViewer(containerRef);
+
+  // Keep latest onLoaded without making it a load-effect dependency (it changes identity each render).
+  const onLoadedRef = useRef(onLoaded);
+  onLoadedRef.current = onLoaded;
 
   // Surface the live viewer handle to the parent so the source view can drive
   // highlight/focus (cleared to null while not ready).
@@ -31,8 +43,10 @@ export default function MolstarViewer({
       try {
         await viewer.clear();
         if (cancelled) return;
-        await viewer.load(data, { label: "structure" });
-        if (!cancelled) viewer.resetCamera();
+        await viewer.load(data, { label: "structure", view, tlsGroups: tlsGroups ?? undefined });
+        if (cancelled) return;
+        viewer.resetCamera();
+        onLoadedRef.current?.({ modelCount: viewer.getModelCount() });
       } catch (e) {
         console.error("Mol* failed to load structure:", e);
       }
@@ -40,7 +54,7 @@ export default function MolstarViewer({
     return () => {
       cancelled = true;
     };
-  }, [viewer, ready, data, binary]);
+  }, [viewer, ready, data, binary, view, tlsGroups]);
 
   return (
     <div className="relative h-full w-full">

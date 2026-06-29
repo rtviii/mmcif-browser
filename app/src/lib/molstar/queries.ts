@@ -55,6 +55,16 @@ export const buildAtomQuery = (
   });
 };
 
+// All residues of a TLS group: one chain, a union of auth_seq_id ranges.
+export const buildTlsGroupExpression = (chain: string, ranges: { beg: number; end: number }[]) => {
+  const inRange = ranges.map((r) => MS.core.rel.inRange([MS.ammp("auth_seq_id"), r.beg, r.end]));
+  const residueTest = inRange.length === 1 ? inRange[0] : MS.core.logic.or(inRange);
+  return MS.struct.generator.atomGroups({
+    "chain-test": MS.core.rel.eq([MS.ammp("auth_asym_id"), chain]),
+    "residue-test": residueTest,
+  });
+};
+
 export const buildEntityQuery = (entityId: string) =>
   MS.struct.generator.atomGroups({
     "chain-test": MS.core.rel.eq([MS.ammp("label_entity_id"), entityId]),
