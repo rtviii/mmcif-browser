@@ -15,7 +15,8 @@ const REVERSE_COUNT_CAP = 200000;
 export interface JoinHit {
   category: string;
   rowIndex: number; // -1 when the referenced category isn't present in the file (schema-only)
-  via: string; // the linking attribute (on the source row for forward, on the child for reverse)
+  via: string; // the linking attribute on the SOURCE row (the FK column the user pinned)
+  targetField: string; // the field in `category` that holds the linking value (highlight this in a preview)
   value: string; // the key value that links them
   summary: string; // short human label for the joined row
 }
@@ -215,6 +216,7 @@ export function computeInstanceJoins(
         category: pcat,
         rowIndex: row,
         via: attr,
+        targetField: pfield,
         value,
         summary: pc ? summarizeRow(pc, pcat, row, `${pfield}=${value}`) : `${pfield}=${value}`,
       });

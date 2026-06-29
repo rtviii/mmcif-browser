@@ -31,6 +31,79 @@ function parseItemName(name: string): { cat: string; field: string } {
   return dot < 0 ? { cat: n, field: "" } : { cat: n.slice(0, dot), field: n.slice(dot + 1) };
 }
 
+// The non-placeholder field:value pairs of one row — used for both the pinned-record header and the
+// hover preview portal.
+function rowFields(file: MolCifFile, block: number, cat: string, row: number): { name: string; value: string }[] {
+  const c = getCategory(file, block, cat);
+  if (!c || row < 0) return [];
+  const out: { name: string; value: string }[] = [];
+  for (const n of c.fieldNames) {
+    const f = c.getField(n);
+    const v = f ? f.str(row) : "";
+    if (!isPlaceholder(v)) out.push({ name: n, value: v });
+  }
+  return out;
+}
+
+// A record value that never truncates: short values render inline; long / multiline ones clamp to
+// two lines and expand in place on click (so a long sequence can't blow up the panel height, but is
+// always one click away in full).
+function ExpandableValue({ value, highlight }: { value: string; highlight?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const color = highlight ? "font-semibold text-amber-800" : "text-slate-700";
+  const long = value.length > 90 || value.includes("\n");
+  if (!long) return <span className={`break-all font-mono ${color}`}>{value}</span>;
+  return (
+    <button
+      type="button"
+      onClick={() => setOpen((v) => !v)}
+      title={open ? "collapse" : "show full value"}
+      className={`w-full cursor-pointer break-all text-left font-mono hover:text-indigo-700 ${color} ${
+        open ? "whitespace-pre-wrap" : "line-clamp-2"
+      }`}
+    >
+      {value}
+    </button>
+  );
+}
+
+// A field:value table; `highlight` boxes the linking field (the FK that brought you here).
+function FieldTable({
+  fields,
+  highlight,
+  max,
+}: {
+  fields: { name: string; value: string }[];
+  highlight?: string;
+  max?: number;
+}) {
+  const shown = max ? fields.slice(0, max) : fields;
+  return (
+    <>
+      <table className="w-full border-collapse text-[10px]">
+        <tbody>
+          {shown.map((f) => {
+            const hl = f.name === highlight;
+            return (
+              <tr key={f.name} className={`align-top ${hl ? "bg-amber-100" : ""}`}>
+                <td className={`whitespace-nowrap py-0.5 pr-2 font-mono ${hl ? "font-semibold text-amber-700" : "text-slate-400"}`}>
+                  {f.name}
+                </td>
+                <td className="py-0.5">
+                  <ExpandableValue value={f.value} highlight={hl} />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {max && fields.length > max && (
+        <div className="px-1 pt-1 text-[10px] text-slate-400">+{fields.length - max} more fields</div>
+      )}
+    </>
+  );
+}
+
 function Section({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   return (
     <div className="mt-2">
@@ -107,14 +180,22 @@ function NeighbourRow({
   );
 }
 
-type PreviewEnter = (blockIndex: number, category: string, rowIndex: number, e: React.MouseEvent) => void;
+type PreviewEnter = (
+  blockIndex: number,
+  category: string,
+  rowIndex: number,
+  highlight: string | undefined,
+  e: React.MouseEvent,
+) => void;
 
-// One forward instance reference (a single parent row). Hover previews it; click jumps to it.
+// One forward instance reference (a single parent row). Hover previews it (highlighting the parent
+// field that holds the linking value); click jumps to it.
 function InstanceHitRow({
   category,
   blockIndex,
   rowIndex,
   via,
+  targetField,
   summary,
   onJump,
   onPreviewEnter,
@@ -124,6 +205,7 @@ function InstanceHitRow({
   blockIndex: number;
   rowIndex: number;
   via: string;
+  targetField: string;
   summary: string;
   onJump?: (blockIndex: number, category: string, rowIndex: number) => void;
   onPreviewEnter: PreviewEnter;
@@ -133,7 +215,7 @@ function InstanceHitRow({
   return (
     <div
       className={`flex items-center gap-1.5 rounded px-1 ${present ? "cursor-pointer hover:bg-slate-50" : "opacity-40"}`}
-      onMouseEnter={present ? (e) => onPreviewEnter(blockIndex, category, rowIndex, e) : undefined}
+      onMouseEnter={present ? (e) => onPreviewEnter(blockIndex, category, rowIndex, targetField, e) : undefined}
       onMouseLeave={present ? onPreviewLeave : undefined}
       onClick={present ? () => onJump?.(blockIndex, category, rowIndex) : undefined}
     >
@@ -164,7 +246,7 @@ function InstanceGroupRow({
   return (
     <div
       className="flex cursor-pointer items-center gap-1.5 rounded px-1 hover:bg-slate-50"
-      onMouseEnter={(e) => onPreviewEnter(blockIndex, group.category, group.sampleRowIndex, e)}
+      onMouseEnter={(e) => onPreviewEnter(blockIndex, group.category, group.sampleRowIndex, group.via, e)}
       onMouseLeave={onPreviewLeave}
       onClick={() => onJump?.(blockIndex, group.category, group.sampleRowIndex)}
     >
@@ -202,11 +284,18 @@ export function ReferencePanel({
   const expand = useStore((s) => s.expand);
   const router = useRouter();
   const panelRef = useRef<HTMLDivElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   const [onlyPresent, setOnlyPresent] = useState(true);
-  const [preview, setPreview] = useState<{ block: number; cat: string; row: number; left: number; top: number } | null>(
-    null,
-  );
+  const [preview, setPreview] = useState<{
+    block: number;
+    cat: string;
+    row: number;
+    left: number;
+    top: number;
+    highlight?: string;
+  } | null>(null);
+  const previewHideTimer = useRef<number | null>(null);
 
   const file = useMemo<MolCifFile | null>(() => (parsed ? asMolCifFile(parsed.raw) : null), [parsed]);
 
@@ -217,26 +306,26 @@ export function ReferencePanel({
     return computeInstanceJoins(file, dict, itemChildren, instance);
   }, [instance, file, dict, itemChildren]);
 
-  // Field/value list for the hovered reference row (the preview portal contents).
-  const previewFields = useMemo(() => {
-    if (!preview || !file) return [];
-    const c = getCategory(file, preview.block, preview.cat);
-    if (!c) return [];
-    const out: { name: string; value: string }[] = [];
-    for (const n of c.fieldNames) {
-      const f = c.getField(n);
-      const v = f ? f.str(preview.row) : "";
-      if (!isPlaceholder(v)) out.push({ name: n, value: v });
-    }
-    return out;
-  }, [preview, file]);
+  // The actual field:value pairs of the pinned record (shown in the header) and of the hovered
+  // reference (shown in the preview portal).
+  const recordFields = useMemo(
+    () => (instance && file ? rowFields(file, instance.blockIndex, instance.category, instance.rowIndex) : []),
+    [instance, file],
+  );
+  const previewFields = useMemo(
+    () => (preview && file ? rowFields(file, preview.block, preview.cat, preview.row) : []),
+    [preview, file],
+  );
 
   // Esc closes; click-outside closes.
   useEffect(() => {
     if (!refPanel) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeRefPanel();
     const onDown = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) closeRefPanel();
+      if (e.button !== 0) return; // ignore right/middle clicks: right-click on a row re-targets the panel
+      const t = e.target as Node;
+      if (previewRef.current?.contains(t)) return; // clicks inside the hover preview portal
+      if (panelRef.current && !panelRef.current.contains(t)) closeRefPanel();
     };
     window.addEventListener("keydown", onKey);
     // defer so the opening click doesn't immediately close it
@@ -253,12 +342,23 @@ export function ReferencePanel({
   const isCat = target.kind === "category";
   const def = lookupDefinition(dict, target);
 
-  const onPreviewEnter: PreviewEnter = (blockIndex, category, rowIndex, e) => {
-    if (rowIndex < 0) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    setPreview({ block: blockIndex, cat: category, row: rowIndex, left: r.left, top: r.top });
+  const cancelPreviewHide = () => {
+    if (previewHideTimer.current) {
+      clearTimeout(previewHideTimer.current);
+      previewHideTimer.current = null;
+    }
   };
-  const onPreviewLeave = () => setPreview(null);
+  const onPreviewEnter: PreviewEnter = (blockIndex, category, rowIndex, highlight, e) => {
+    if (rowIndex < 0) return;
+    cancelPreviewHide();
+    const r = e.currentTarget.getBoundingClientRect();
+    setPreview({ block: blockIndex, cat: category, row: rowIndex, left: r.left, top: r.top, highlight });
+  };
+  // Grace period so the mouse can travel from the row into the (now hoverable) portal.
+  const onPreviewLeave = () => {
+    cancelPreviewHide();
+    previewHideTimer.current = window.setTimeout(() => setPreview(null), 160);
+  };
 
   // --- schema neighbours (only built/shown when NOT in instance mode) ---
   const forward: NeighbourEntry[] = [];
@@ -310,27 +410,38 @@ export function ReferencePanel({
   const openInGraph = () => {
     focus(target.cat); // both category and item targets carry `.cat`
     expand(target.cat);
-    router.push("/");
+    router.push("/dictionary");
   };
 
   return (
     <>
       <div
         ref={panelRef}
-        className="fixed right-6 top-[72px] z-[60] flex max-h-[72vh] w-[420px] flex-col rounded-lg border border-slate-200 bg-white shadow-2xl"
+        className="fixed right-6 top-[72px] z-[60] flex max-h-[85vh] w-[520px] flex-col rounded-lg border border-slate-200 bg-white shadow-2xl"
       >
         {/* header */}
         <div className="flex items-start justify-between gap-2 border-b border-slate-100 p-2.5">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             {instance ? (
               <>
-                <span className="text-[10px] uppercase tracking-wide text-slate-400">record</span>
-                <div className="truncate font-mono text-[12px] font-semibold text-slate-700">
-                  {instance.label ?? `${target.cat} #${instance.rowIndex + 1}`}
-                </div>
-                <div className="mt-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] uppercase tracking-wide text-slate-400">record</span>
                   <MmcifChip target={target} variant="chip" full />
+                  {onJumpToInstance && (
+                    <button
+                      onClick={() => onJumpToInstance(instance.blockIndex, instance.category, instance.rowIndex)}
+                      title="scroll back to this record in the source"
+                      className="shrink-0 rounded px-1 text-[10px] text-indigo-500 hover:bg-indigo-50 hover:text-indigo-700"
+                    >
+                      jump to →
+                    </button>
+                  )}
                 </div>
+                {recordFields.length > 0 && (
+                  <div className="mt-1 rounded bg-slate-50 p-1">
+                    <FieldTable fields={recordFields} />
+                  </div>
+                )}
               </>
             ) : (
               <>
@@ -378,6 +489,7 @@ export function ReferencePanel({
                     blockIndex={instance.blockIndex}
                     rowIndex={h.rowIndex}
                     via={h.via}
+                    targetField={h.targetField}
                     summary={h.summary}
                     onJump={onJumpToInstance}
                     onPreviewEnter={onPreviewEnter}
@@ -449,37 +561,38 @@ export function ReferencePanel({
         </div>
       </div>
 
-      {/* hover preview portal: a peek at the referenced row's contents */}
+      {/* hover preview portal: a reachable peek at the referenced row, with the linking FK
+          highlighted and its own jump-to. Grace timer keeps it open while the mouse travels here;
+          stopPropagation on mousedown keeps the panel's click-outside from closing. */}
       {preview &&
         previewFields.length > 0 &&
         createPortal(
           <div
-            className="pointer-events-none fixed z-[65] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl"
+            ref={previewRef}
+            onMouseEnter={cancelPreviewHide}
+            onMouseLeave={onPreviewLeave}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="fixed z-[65] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl"
             style={{
               width: PREVIEW_W,
               left: Math.max(8, preview.left - PREVIEW_W - 12),
               top: Math.max(8, Math.min(preview.top, (typeof window !== "undefined" ? window.innerHeight : 800) - 300)),
             }}
           >
-            <div className="border-b border-slate-100 bg-slate-50 px-2 py-1 font-mono text-[10px] font-semibold text-slate-600">
-              {preview.cat}
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-2 py-1">
+              <span className="truncate font-mono text-[10px] font-semibold text-slate-600">{preview.cat}</span>
+              {onJumpToInstance && (
+                <button
+                  onClick={() => onJumpToInstance(preview.block, preview.cat, preview.row)}
+                  title="scroll to this row in the source"
+                  className="shrink-0 rounded px-1 text-[10px] text-indigo-500 hover:bg-indigo-100 hover:text-indigo-700"
+                >
+                  jump to →
+                </button>
+              )}
             </div>
             <div className="max-h-[260px] overflow-auto p-1.5">
-              <table className="w-full border-collapse text-[10px]">
-                <tbody>
-                  {previewFields.slice(0, PREVIEW_MAX_FIELDS).map((f) => (
-                    <tr key={f.name} className="align-top">
-                      <td className="whitespace-nowrap py-0.5 pr-2 font-mono text-slate-400">{f.name}</td>
-                      <td className="break-all py-0.5 font-mono text-slate-700">{f.value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {previewFields.length > PREVIEW_MAX_FIELDS && (
-                <div className="px-1 pt-1 text-[10px] text-slate-400">
-                  +{previewFields.length - PREVIEW_MAX_FIELDS} more fields
-                </div>
-              )}
+              <FieldTable fields={previewFields} highlight={preview.highlight} max={PREVIEW_MAX_FIELDS} />
             </div>
           </div>,
           document.body,

@@ -1,21 +1,11 @@
 "use client";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import type { CifDocument } from "@/lib/cif-source/segment";
-import type { FoldNode, HierarchyMode } from "@/lib/cif-source/fold-tree";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import type { CategorySpan, CifDocument } from "@/lib/cif-source/segment";
+import type { FoldNode } from "@/lib/cif-source/fold-tree";
 import type { VisibleRow } from "@/lib/cif-source/flatten";
 import type { KeyValueTable, LoopTable } from "@/lib/cif-source/table";
 import { type Token, tokenizeLine } from "@/lib/cif-source/tokenize";
-import {
-  ALL_LENSES,
-  buildLensGroups,
-  LENS_META,
-  nonDepositionCategories,
-  structuralCategories,
-} from "@/lib/cif-source/classify";
-import { useStore } from "@/lib/store";
-import { CategoryFilter, type FilterEntry } from "./CategoryFilter";
-import { ViewMenu } from "./ViewMenu";
 
 const NUMERIC = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
 
@@ -39,6 +29,7 @@ export interface ViewOptions {
   hideNoise: boolean;
   collapsePreamble: boolean;
   tableMode: boolean;
+  stickyHeader: boolean;
 }
 
 // A persistent popover anchored to a clicked cell / multiline value, dismissed by
@@ -57,23 +48,10 @@ export interface SourceViewHandle {
 export interface SourceViewProps {
   doc: CifDocument;
   visible: VisibleRow[];
-  mode: HierarchyMode;
   viewOptions: ViewOptions;
   tableModel: Map<number, LoopTable>;
   kvTableModel: Map<number, KeyValueTable>;
-  onModeChange: (m: HierarchyMode) => void;
-  onToggleNoise: () => void;
-  onToggleTable: () => void;
-  onTogglePreamble: () => void;
-  // Outline pane visibility (the outline lives in SourceInspector, toggled from this toolbar).
-  outlineShown?: boolean;
-  onToggleOutline?: () => void;
-  onToggle: (id: string) => void;
-  allExpanded: boolean;
-  onToggleExpandAll: () => void;
-  preambleCategories: string[];
-  filter: FilterEntry[];
-  onFilterChange: (f: FilterEntry[]) => void;
+  onToggle: (id: string) => void; // category fold chevron in the header rows
   onHoverItem: (cat: string, field: string, e: React.MouseEvent) => void;
   onHoverCategory: (cat: string, e: React.MouseEvent) => void;
   onClearHover: () => void;
@@ -83,20 +61,19 @@ export interface SourceViewProps {
   onStructLeave: () => void;
   onRowClick: (lineIndex: number) => void;
   onHeaderClick?: (node: FoldNode) => void;
+  // Right-click -> open the references panel for the row / category (instead of the browser menu).
+  onRowContextMenu?: (lineIndex: number) => void;
+  onHeaderContextMenu?: (node: FoldNode) => void;
   // Outline sync: report the top visible source line on scroll; flash a line range on click-to.
   onTopLineChange?: (lineIndex: number) => void;
   highlightRange?: { start: number; end: number } | null;
-  // Persistent pin: highlight the pinned line range / category header; chip for jump-back + clear.
+  // Persistent pin: highlight the pinned line range / category header (the chip lives in the toolbar).
   pinnedRange?: { start: number; end: number } | null;
   pinnedHeaderId?: string | null;
-  pinnedLabel?: string | null;
-  onPinJump?: () => void;
-  onPinClear?: () => void;
-  onPinReferences?: () => void; // open the dig-deeper reference panel for the pinned row
 }
 
 const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function SourceView(props, ref) {
-  const { doc, visible, mode, viewOptions, tableModel, kvTableModel } = props;
+  const { doc, visible, viewOptions, tableModel, kvTableModel } = props;
   const parentRef = useRef<HTMLDivElement>(null);
   const gutterPx = GUTTER_PAD + RAIL_W;
 
@@ -129,22 +106,51 @@ const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function Source
     [virtualizer],
   );
 
-  // rAF-throttled top-line reporting for source-scroll -> outline-selection. Find the first
-  // virtual item whose bottom edge is below the scroll top (skips the overscan rows above).
+  // Sticky category header: the category whose rows are at the top of the viewport, plus the live
+  // horizontal scroll offset so the pinned column headers stay aligned with the data columns.
+  const [sticky, setSticky] = useState<{ si: number; category: string; isLoop: boolean } | null>(null);
+  const [scrollLeft, setScrollLeft] = useState(0);
+
+  // Resolve the topmost visible row to its category. Returns null at a real header row (the header
+  // is already on screen, so no duplicate sticky is needed).
+  const computeSticky = useCallback(() => {
+    const el = parentRef.current;
+    if (!el) return null;
+    const items = virtualizer.getVirtualItems();
+    const it = items.find((v) => v.start + v.size > el.scrollTop) ?? items[0];
+    const row = it ? visible[it.index] : undefined;
+    if (!row || row.kind === "header") return null;
+    const si = doc.lineToSpan[row.lineIndex];
+    if (si < 0) return null;
+    const span = doc.spans[si];
+    return { si, category: span.category, isLoop: span.kind === "loop" };
+  }, [virtualizer, visible, doc]);
+
+  // rAF-throttled scroll handling: top-line reporting for source-scroll -> outline-selection, plus
+  // the sticky-header category + horizontal offset.
   const scrollRaf = useRef<number | null>(null);
   const onScroll = () => {
-    if (!props.onTopLineChange || scrollRaf.current != null) return;
+    if (scrollRaf.current != null) return;
     scrollRaf.current = requestAnimationFrame(() => {
       scrollRaf.current = null;
       const el = parentRef.current;
       if (!el) return;
-      const top = el.scrollTop;
-      const items = virtualizer.getVirtualItems();
-      const it = items.find((v) => v.start + v.size > top) ?? items[0];
-      const row = it ? visible[it.index] : undefined;
-      if (row) props.onTopLineChange!(row.kind === "line" ? row.lineIndex : row.node.startLine);
+      setScrollLeft(el.scrollLeft);
+      setSticky(computeSticky());
+      if (props.onTopLineChange) {
+        const items = virtualizer.getVirtualItems();
+        const it = items.find((v) => v.start + v.size > el.scrollTop) ?? items[0];
+        const row = it ? visible[it.index] : undefined;
+        if (row) props.onTopLineChange(row.kind === "line" ? row.lineIndex : row.node.startLine);
+      }
     });
   };
+
+  // Recompute the sticky category when the visible rows change (expand/collapse, mode, filter) or on
+  // first render; scroll-driven updates are handled in onScroll.
+  useEffect(() => {
+    setSticky(computeSticky());
+  }, [computeSticky]);
 
   const contentWidth = useMemo(() => {
     let max = 0;
@@ -152,112 +158,21 @@ const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function Source
     return gutterPx + Math.ceil(max * CH_PX) + 24;
   }, [doc, gutterPx]);
 
-  // Category + item options for the filter box: every category in the file, and every item
-  // (`_cat.attr`) it declares. Selecting any narrows the source view to those categories.
-  const filterOptions = useMemo(() => {
-    const cats: string[] = [];
-    const seenCat = new Set<string>();
-    const items: { label: string; category: string }[] = [];
-    const seenItem = new Set<string>();
-    for (const s of doc.spans) {
-      if (s.category && !seenCat.has(s.category)) (seenCat.add(s.category), cats.push(s.category));
-      const attrs = s.kind === "loop" ? s.fieldNames : Object.keys(s.itemLines);
-      for (const a of attrs) {
-        const label = `_${s.category}.${a}`;
-        if (!seenItem.has(label)) (seenItem.add(label), items.push({ label, category: s.category }));
-      }
-    }
-    cats.sort();
-    items.sort((x, y) => x.label.localeCompare(y.label));
-    return { cats, items };
-  }, [doc]);
-
-  // Lens presets for the filter: classify the in-file categories (dictionary groups +
-  // overrides) into structural / context lenses, plus the two cross-cutting selections.
-  const dict = useStore((s) => s.dict);
-  const presets = useMemo(() => {
-    const cats = filterOptions.cats;
-    const groups = buildLensGroups(cats, dict);
-    const lenses = ALL_LENSES.map((id) => ({ ...LENS_META[id], categories: groups[id] })).filter(
-      (l) => l.categories.length > 0,
-    );
-    return {
-      lenses,
-      structuralOnly: structuralCategories(cats, dict),
-      hideDeposition: nonDepositionCategories(cats, dict),
-    };
-  }, [filterOptions.cats, dict]);
-
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-slate-200 px-2 text-[11px]">
-        <ViewMenu
-          mode={mode}
-          onModeChange={props.onModeChange}
-          collapsePreamble={viewOptions.collapsePreamble}
-          onTogglePreamble={props.onTogglePreamble}
-          hideNoise={viewOptions.hideNoise}
-          onToggleNoise={props.onToggleNoise}
-          preambleCategories={props.preambleCategories}
-        />
-        {props.onToggleOutline && (
-          <Toggle on={!!props.outlineShown} onClick={props.onToggleOutline}>
-            Outline
-          </Toggle>
+    <div className="relative flex min-h-0 flex-1 flex-col">
+        {viewOptions.stickyHeader && sticky && (
+          <StickyHeader
+            span={doc.spans[sticky.si]}
+            table={sticky.isLoop && viewOptions.tableMode ? tableModel.get(sticky.si) : undefined}
+            gutterPx={gutterPx}
+            scrollLeft={scrollLeft}
+          />
         )}
-        <Toggle on={viewOptions.tableMode} onClick={props.onToggleTable}>
-          Table
-        </Toggle>
-        <button
-          onClick={props.onToggleExpandAll}
-          className="shrink-0 whitespace-nowrap rounded border border-slate-300 bg-white px-2 py-0.5 text-slate-700 hover:bg-slate-50"
+        <div
+          ref={parentRef}
+          onScroll={onScroll}
+          className="no-scrollbar min-h-0 flex-1 overflow-auto bg-white font-mono text-[11px]"
         >
-          {props.allExpanded ? "Collapse all" : "Expand all"}
-        </button>
-        <CategoryFilter
-          categories={filterOptions.cats}
-          items={filterOptions.items}
-          selected={props.filter}
-          onChange={props.onFilterChange}
-          presets={presets}
-        />
-        <span className="ml-auto shrink-0 font-mono text-slate-400">{visible.length.toLocaleString()} rows</span>
-      </div>
-
-      {props.pinnedLabel && (
-        <div className="flex h-6 shrink-0 items-center gap-2 border-b border-indigo-200 bg-indigo-50/70 px-2 text-[11px]">
-          <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide text-indigo-400">pinned</span>
-          <button
-            onClick={props.onPinJump}
-            title="scroll to the pinned row"
-            className="min-w-0 flex-1 truncate text-left font-mono text-indigo-700 hover:underline"
-          >
-            {props.pinnedLabel}
-          </button>
-          {props.onPinReferences && (
-            <button
-              onClick={props.onPinReferences}
-              title="references — what this row links to / what links to it"
-              className="shrink-0 rounded px-1 font-mono text-indigo-500 hover:bg-indigo-100 hover:text-indigo-700"
-            >
-              ⧉ references
-            </button>
-          )}
-          <button
-            onClick={props.onPinClear}
-            title="unpin (Esc)"
-            className="shrink-0 rounded px-1 text-indigo-500 hover:bg-indigo-100 hover:text-indigo-700"
-          >
-            × unpin
-          </button>
-        </div>
-      )}
-
-      <div
-        ref={parentRef}
-        onScroll={onScroll}
-        className="no-scrollbar min-h-0 flex-1 overflow-auto bg-white font-mono text-[11px]"
-      >
         <div style={{ height: virtualizer.getTotalSize(), width: contentWidth, position: "relative" }}>
           {virtualizer.getVirtualItems().map((vi) => {
             const row = visible[vi.index];
@@ -289,6 +204,11 @@ const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function Source
                 onClick={
                   row.kind === "line" ? () => props.onRowClick(row.lineIndex) : () => props.onHeaderClick?.(row.node)
                 }
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  if (row.kind === "line") props.onRowContextMenu?.(row.lineIndex);
+                  else props.onHeaderContextMenu?.(row.node);
+                }}
               >
                 {row.kind === "header" ? (
                   <HeaderRow
@@ -325,7 +245,7 @@ const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function Source
             );
           })}
         </div>
-      </div>
+        </div>
 
       {pop && (
         <>
@@ -345,25 +265,56 @@ const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function Source
 
 export default SourceView;
 
-function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`shrink-0 whitespace-nowrap rounded border px-2 py-0.5 ${
-        on
-          ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-          : "border-slate-300 bg-white text-slate-500 hover:bg-slate-50"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
 // A fixed-width sticky spacer so the data content aligns under the category header name (the
 // category's fold chevron lives in the header row). Chain/residue navigation is in the outline.
 function Gutter({ gutterPx }: { gutterPx: number }) {
   return <span className="sticky left-0 z-10 h-full shrink-0 bg-white" style={{ width: gutterPx }} />;
+}
+
+// The sticky category header: the current category's name pinned to the top of the scroll viewport,
+// plus (for loops in table mode) its column-header row kept horizontally aligned with the data via
+// the live scrollLeft offset. Informational only (pointer-events-none) so it never intercepts the
+// row clicks beneath it. The gutter spacer stays opaque and above the cells so columns scrolling
+// under it are clipped, matching the real rows' sticky gutter.
+function StickyHeader({
+  span,
+  table,
+  gutterPx,
+  scrollLeft,
+}: {
+  span: CategorySpan;
+  table: LoopTable | undefined;
+  gutterPx: number;
+  scrollLeft: number;
+}) {
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-20 border-b border-slate-200 bg-white/95 font-mono shadow-sm backdrop-blur-sm">
+      <div className="flex items-center" style={{ height: ROW_H }}>
+        <span className="shrink-0" style={{ width: gutterPx }} />
+        <span className="pl-1 text-[11px] font-semibold tracking-tight text-slate-700">{span.category}</span>
+        {span.kind === "kv" && <span className="ml-0.5 text-indigo-400">∗</span>}
+        {table && (
+          <span className="ml-2 shrink-0 text-[10px] text-slate-400">{table.rowCount.toLocaleString()} rows</span>
+        )}
+      </div>
+      {table && span.kind === "loop" && (
+        <div className="flex items-center overflow-hidden" style={{ height: ROW_H }}>
+          <span className="relative z-10 h-full shrink-0 bg-white" style={{ width: gutterPx }} />
+          <span className="flex pl-1 pr-4" style={{ transform: `translateX(${-scrollLeft}px)` }}>
+            {span.fieldNames.map((f, c) => (
+              <span
+                key={c}
+                className="mr-1 inline-block shrink-0 overflow-hidden text-ellipsis whitespace-nowrap border-b border-slate-200 text-[10px] text-teal-700"
+                style={{ width: cellPx(table.widths[c]) }}
+              >
+                {f}
+              </span>
+            ))}
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function VerbatimContent({

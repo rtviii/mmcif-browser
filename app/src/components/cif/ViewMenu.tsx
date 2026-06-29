@@ -14,6 +14,8 @@ export function ViewMenu({
   onTogglePreamble,
   hideNoise,
   onToggleNoise,
+  stickyHeader,
+  onToggleSticky,
   preambleCategories,
 }: {
   mode: HierarchyMode;
@@ -22,6 +24,8 @@ export function ViewMenu({
   onTogglePreamble: () => void;
   hideNoise: boolean;
   onToggleNoise: () => void;
+  stickyHeader: boolean;
+  onToggleSticky: () => void;
   preambleCategories: string[];
 }) {
   const [open, setOpen] = useState(false);
@@ -131,6 +135,15 @@ export function ViewMenu({
           <p className="mt-1 leading-snug text-slate-500">
             Drop blank lines and <span className="font-mono text-slate-600">#</span> comment lines so only data rows
             remain.
+          </p>
+
+          <div className="my-2.5 border-t border-slate-100" />
+
+          {/* Sticky header */}
+          <MenuToggle on={stickyHeader} onToggle={onToggleSticky} label="Sticky header" />
+          <p className="mt-1 leading-snug text-slate-500">
+            Keep the current category name (and its column headers, in table mode) pinned at the top while you scroll
+            through a long block.
           </p>
         </div>
       )}

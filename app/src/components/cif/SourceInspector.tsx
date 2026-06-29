@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ParsedCif } from "@/lib/cif";
 import { flattenVisible } from "@/lib/cif-source/flatten";
 import {
@@ -13,7 +14,7 @@ import { deepestVisibleNodeAt, flattenOutline } from "@/lib/cif-source/outline";
 import { segmentDocument } from "@/lib/cif-source/segment";
 import {
   buildKeyValueTable,
-  buildLineToRow,
+  buildLineToRowFull,
   buildLoopTable,
   type KeyValueTable,
   type LoopTable,
@@ -32,6 +33,7 @@ import {
 import { useStore } from "@/lib/store";
 import { Color } from "molstar/lib/mol-util/color";
 import { type FilterEntry } from "./CategoryFilter";
+import { InspectorToolbar } from "./InspectorToolbar";
 import { OutlinePane, type OutlinePaneHandle } from "./OutlinePane";
 import { ReferencePanel } from "./ReferencePanel";
 import SourceView, { type SourceViewHandle, type ViewOptions } from "./SourceView";
@@ -74,19 +76,24 @@ export default function SourceInspector({
   file,
   parsed,
   viewer,
+  toolbarSlot,
+  active,
 }: {
   file: LoadedFile | null;
   parsed: ParsedCif | null;
   viewer: MolstarViewer | null;
+  toolbarSlot: HTMLElement | null; // the pane's full-width top bar; the view controls portal into it
+  active: boolean; // only the active tab renders the (global) reference panel
 }) {
   const setHoverDef = useStore((s) => s.setHoverDef);
   const scheduleClearHoverDef = useStore((s) => s.scheduleClearHoverDef);
   const openRefPanel = useStore((s) => s.openRefPanel);
   const [mode, setMode] = useState<HierarchyMode>("auth");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [hideNoise, setHideNoise] = useState(false);
-  const [collapsePreamble, setCollapsePreamble] = useState(false);
-  const [tableMode, setTableMode] = useState(false);
+  const [hideNoise, setHideNoise] = useState(true);
+  const [collapsePreamble, setCollapsePreamble] = useState(true);
+  const [tableMode, setTableMode] = useState(true);
+  const [stickyHeader, setStickyHeader] = useState(true); // pin the current category header in table mode
   const [filter, setFilter] = useState<FilterEntry[]>([]);
 
   // Outline pane: its own expand state (separate from the source `collapsed`), the active
@@ -171,8 +178,10 @@ export default function SourceInspector({
     return m;
   }, [doc, parsed, tableMode]);
 
-  // Per-loop line -> parsed row index, for the non-atom_site categories the 3D interaction
-  // resolver targets (atom_site uses a direct offset and is excluded to avoid 58k-entry maps).
+  // Per-loop line -> parsed row index, for the non-atom_site categories the 3D interaction +
+  // reference-panel resolvers target (atom_site uses a direct offset and is excluded to avoid
+  // 58k-entry maps). Full map (continuation lines included) so a click on any physical line of a
+  // wrapped / ;-multiline row resolves to its record, not the category.
   const rowMaps = useMemo(() => {
     const m = new Map<number, Map<number, number>>();
     if (!doc || !parsed) return m;
@@ -181,7 +190,7 @@ export default function SourceInspector({
       if (span.kind !== "loop" || span.category === "atom_site" || span.dataStart < 0) return;
       const cat = file.blocks[span.block]?.categories[span.category];
       if (!cat) return;
-      m.set(si, buildLineToRow(doc, span, cat.rowCount));
+      m.set(si, buildLineToRowFull(doc, span, cat.rowCount));
     });
     return m;
   }, [doc, parsed]);
@@ -687,18 +696,36 @@ export default function SourceInspector({
     return { blockIndex: span.block, category: span.category, rowIndex: 0 }; // kv: single row
   };
 
+  // Open the dig-deeper reference panel for a source line: instance mode when the line resolves to a
+  // concrete row (row joins), else schema mode for its category. Shared by the pin-chip "references"
+  // button and the right-click affordance.
+  const openReferencesForLine = (lineIndex: number, label?: string) => {
+    if (!doc) return;
+    const cat = doc.spans[doc.lineToSpan[lineIndex]]?.category;
+    const ctx = rowContextForLine(lineIndex);
+    if (ctx) openRefPanel({ kind: "category", cat: ctx.category }, { ...ctx, label: label ?? cat });
+    else if (cat) openRefPanel({ kind: "category", cat });
+  };
+
   const pinReferences = () => {
     if (!pinned || !doc) return;
-    const cat = doc.spans[doc.lineToSpan[pinned.anchorLine]]?.category;
     // category-header pin -> schema mode; row pin -> instance mode (row joins).
     if (pinned.headerId) {
+      const cat = doc.spans[doc.lineToSpan[pinned.anchorLine]]?.category;
       if (cat) openRefPanel({ kind: "category", cat });
       return;
     }
-    const ctx = rowContextForLine(pinned.anchorLine);
-    if (ctx) openRefPanel({ kind: "category", cat: ctx.category }, { ...ctx, label: pinned.label });
-    else if (cat) openRefPanel({ kind: "category", cat });
+    openReferencesForLine(pinned.anchorLine, pinned.label);
   };
+
+  // Right-click a row -> open its references (instance mode) instead of the browser context menu;
+  // right-click a category header -> schema mode. Left-click still pins (3D highlight).
+  const onRowContextMenu = (lineIndex: number) => {
+    const r = resolveLine(lineIndex);
+    const cat = doc ? doc.spans[doc.lineToSpan[lineIndex]]?.category : undefined;
+    openReferencesForLine(lineIndex, r?.label ?? cat);
+  };
+  const onHeaderContextMenu = (node: FoldNode) => openRefPanel({ kind: "category", cat: node.category });
 
   // Force-expand a span's category and scroll/flash a single source line. Shared by the
   // category- and item-level jumps below (the reference panel's in-file navigation).
@@ -777,17 +804,55 @@ export default function SourceInspector({
     });
   };
 
-  const viewOptions: ViewOptions = { hideNoise, collapsePreamble, tableMode };
+  const viewOptions: ViewOptions = { hideNoise, collapsePreamble, tableMode, stickyHeader };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ReferencePanel
-        parsed={parsed}
-        presentCategories={presentCategories}
-        onJumpToInstance={jumpToInstance}
-        onJumpToCategory={jumpToCategory}
-        onJumpToItem={jumpToItem}
-      />
+      {/* The reference panel is driven by the global store; only the active tab renders it so hidden
+          tabs don't resolve its row context against the wrong file. */}
+      {active && (
+        <ReferencePanel
+          parsed={parsed}
+          presentCategories={presentCategories}
+          onJumpToInstance={jumpToInstance}
+          onJumpToCategory={jumpToCategory}
+          onJumpToItem={jumpToItem}
+        />
+      )}
+      {/* The view controls live in the pane's full-width top bar (shared with the file controls);
+          portal them up so they keep direct access to this inspector's view + pin state. */}
+      {toolbarSlot &&
+        isText &&
+        doc &&
+        tree &&
+        createPortal(
+          <InspectorToolbar
+            doc={doc}
+            rowCount={visibleShown.length}
+            mode={mode}
+            onModeChange={setMode}
+            hideNoise={hideNoise}
+            onToggleNoise={() => setHideNoise((v) => !v)}
+            collapsePreamble={collapsePreamble}
+            onTogglePreamble={onTogglePreamble}
+            preambleCategories={preambleCategories}
+            tableMode={tableMode}
+            onToggleTable={() => setTableMode((v) => !v)}
+            stickyHeader={stickyHeader}
+            onToggleSticky={() => setStickyHeader((v) => !v)}
+            outlineShown={showOutline}
+            onToggleOutline={() => setShowOutline((v) => !v)}
+            allExpanded={collapsed.size === 0}
+            onToggleExpandAll={onToggleExpandAll}
+            filter={filter}
+            onFilterChange={setFilter}
+            pinnedLabel={pinned?.label ?? null}
+            onPinJump={jumpToPinned}
+            onPinClear={clearPin}
+            onPinReferences={pinReferences}
+          />,
+          toolbarSlot,
+        )}
       {isText && doc && tree ? (
         <div ref={innerSplitRef} className="flex min-h-0 flex-1">
           {showOutline && (
@@ -819,22 +884,10 @@ export default function SourceInspector({
               ref={sourceRef}
               doc={doc}
               visible={visibleShown}
-              mode={mode}
               viewOptions={viewOptions}
               tableModel={tableModel}
               kvTableModel={kvTableModel}
-              onModeChange={setMode}
-              outlineShown={showOutline}
-              onToggleOutline={() => setShowOutline((v) => !v)}
-              onToggleNoise={() => setHideNoise((v) => !v)}
-              onToggleTable={() => setTableMode((v) => !v)}
-              onTogglePreamble={onTogglePreamble}
               onToggle={onToggle}
-              allExpanded={collapsed.size === 0}
-              onToggleExpandAll={onToggleExpandAll}
-              preambleCategories={preambleCategories}
-              filter={filter}
-              onFilterChange={setFilter}
               onHoverItem={(cat, field, e) => setHoverDef({ kind: "item", cat, field }, { x: e.clientX, y: e.clientY })}
               onHoverCategory={(cat, e) => setHoverDef({ kind: "category", cat }, { x: e.clientX, y: e.clientY })}
               onClearHover={scheduleClearHoverDef}
@@ -843,14 +896,12 @@ export default function SourceInspector({
               onStructLeave={onStructLeave}
               onRowClick={onRowClick}
               onHeaderClick={onHeaderClick}
+              onRowContextMenu={onRowContextMenu}
+              onHeaderContextMenu={onHeaderContextMenu}
               onTopLineChange={onTopLineChange}
               highlightRange={highlightRange}
               pinnedRange={pinned?.range ?? null}
               pinnedHeaderId={pinned?.headerId ?? null}
-              pinnedLabel={pinned?.label ?? null}
-              onPinJump={jumpToPinned}
-              onPinClear={clearPin}
-              onPinReferences={pinReferences}
             />
           </div>
         </div>

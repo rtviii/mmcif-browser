@@ -90,11 +90,26 @@ export function buildLoopTable(doc: CifDocument, span: LoopSpan, file: MolCifFil
 }
 
 // Map each data row-start physical line to its parsed row index. Continuation lines of a
-// wrapped row are absent from the map. Reused by the 3D interaction resolver.
+// wrapped row are absent from the map (they become contLines, hidden in table mode).
 export function buildLineToRow(doc: CifDocument, span: LoopSpan, rowCount: number): Map<number, number> {
   const lineToRow = new Map<number, number>();
   if (span.dataStart < 0) return lineToRow;
   rowStarts(doc, span, rowCount).forEach((ln, ri) => lineToRow.set(ln, ri));
+  return lineToRow;
+}
+
+// Map EVERY data line — row-start AND continuation lines of a wrapped / ;-multiline row — to its
+// owning parsed row. Unlike buildLineToRow (row-starts only, for rendering), this lets a click on
+// any physical line of a multiline value resolve to the record it belongs to instead of falling
+// back to the category. Reused by the 3D interaction + reference-panel resolvers.
+export function buildLineToRowFull(doc: CifDocument, span: LoopSpan, rowCount: number): Map<number, number> {
+  const lineToRow = new Map<number, number>();
+  if (span.dataStart < 0) return lineToRow;
+  const starts = rowStarts(doc, span, rowCount);
+  for (let ri = 0; ri < starts.length; ri++) {
+    const to = ri + 1 < starts.length ? starts[ri + 1] - 1 : span.dataEnd;
+    for (let ln = starts[ri]; ln <= to; ln++) lineToRow.set(ln, ri);
+  }
   return lineToRow;
 }
 
