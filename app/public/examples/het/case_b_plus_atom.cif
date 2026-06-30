@@ -1,0 +1,88 @@
+data_case_b_plus_atom
+#
+# Case B+: Lys78 has TWO independent two-state choices at the SAME residue -- a backbone "loop"
+# choice (atoms N,CA,C,O,H) and a side-chain "rotamer" choice (CB,CG,CD,CE,NZ). Both reuse the
+# altloc letters A/B on residue 78, so the networks are separated by label_atom_id, not by residue.
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+_atom_site.pdbx_formal_charge
+_atom_site.auth_seq_id
+_atom_site.auth_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_atom_id
+_atom_site.pdbx_PDB_model_num
+ATOM  1 N N  A LYS A 1 78 ? 7.665 7.118 4.470 0.50 14.68 ? 78 LYS A N  1
+ATOM  2 C CA A LYS A 1 78 ? 8.501 6.770 5.610 0.50 14.21 ? 78 LYS A CA 1
+ATOM  3 C C  A LYS A 1 78 ? 7.880 5.880 6.690 0.50 13.90 ? 78 LYS A C  1
+ATOM  4 O O  A LYS A 1 78 ? 8.465 5.797 7.770 0.50 14.55 ? 78 LYS A O  1
+ATOM  5 H H  A LYS A 1 78 ? 6.720 6.880 4.330 0.50 17.60 ? 78 LYS A H  1
+ATOM  6 C CB A LYS A 1 78 ? 9.880 6.210 5.210 0.50 16.02 ? 78 LYS A CB 1
+ATOM  7 C CG A LYS A 1 78 ? 10.910 6.110 6.330 0.50 18.44 ? 78 LYS A CG 1
+ATOM  8 C CD A LYS A 1 78 ? 12.260 5.620 5.820 0.50 21.07 ? 78 LYS A CD 1
+ATOM  9 C CE A LYS A 1 78 ? 13.300 5.520 6.930 0.50 23.51 ? 78 LYS A CE 1
+ATOM 10 N NZ A LYS A 1 78 ? 14.610 5.040 6.440 0.50 25.80 ? 78 LYS A NZ 1
+ATOM 11 N N  B LYS A 1 78 ? 7.665 7.118 4.470 0.50 14.68 ? 78 LYS A N  1
+ATOM 12 C CA B LYS A 1 78 ? 8.460 6.690 5.640 0.50 14.30 ? 78 LYS A CA 1
+ATOM 13 C C  B LYS A 1 78 ? 7.770 5.760 6.640 0.50 13.81 ? 78 LYS A C  1
+ATOM 14 O O  B LYS A 1 78 ? 8.483 5.628 7.737 0.50 13.51 ? 78 LYS A O  1
+ATOM 15 H H  B LYS A 1 78 ? 6.700 6.910 4.300 0.50 17.20 ? 78 LYS A H  1
+ATOM 16 C CB B LYS A 1 78 ? 9.770 6.040 5.020 0.50 16.55 ? 78 LYS A CB 1
+ATOM 17 C CG B LYS A 1 78 ? 10.720 5.880 6.210 0.50 18.90 ? 78 LYS A CG 1
+ATOM 18 C CD B LYS A 1 78 ? 12.140 5.440 5.780 0.50 21.66 ? 78 LYS A CD 1
+ATOM 19 C CE B LYS A 1 78 ? 13.020 5.330 7.010 0.50 24.02 ? 78 LYS A CE 1
+ATOM 20 N NZ B LYS A 1 78 ? 14.420 4.910 6.700 0.50 26.31 ? 78 LYS A NZ 1
+#
+loop_
+_pdbx_alt_groups.id
+_pdbx_alt_groups.alt_group_id
+_pdbx_alt_groups.auth_asym_id
+_pdbx_alt_groups.auth_seq_id_start
+_pdbx_alt_groups.auth_seq_id_end
+_pdbx_alt_groups.label_alt_id
+_pdbx_alt_groups.label_atom_id
+1  loop_A A 78 78 A N
+2  loop_A A 78 78 A CA
+3  loop_A A 78 78 A C
+4  loop_A A 78 78 A O
+5  loop_A A 78 78 A H
+6  loop_B A 78 78 B N
+7  loop_B A 78 78 B CA
+8  loop_B A 78 78 B C
+9  loop_B A 78 78 B O
+10 loop_B A 78 78 B H
+11 rot_A  A 78 78 A CB
+12 rot_A  A 78 78 A CG
+13 rot_A  A 78 78 A CD
+14 rot_A  A 78 78 A CE
+15 rot_A  A 78 78 A NZ
+16 rot_B  A 78 78 B CB
+17 rot_B  A 78 78 B CG
+18 rot_B  A 78 78 B CD
+19 rot_B  A 78 78 B CE
+20 rot_B  A 78 78 B NZ
+#
+loop_
+_pdbx_heterogeneity_hierarchy.alt_group_id
+_pdbx_heterogeneity_hierarchy.coexistence_group_id
+_pdbx_heterogeneity_hierarchy.parent_alt_groups_id
+base   .       .
+loop_A loop    base
+loop_B loop    base
+rot_A  rotamer base
+rot_B  rotamer base
+#

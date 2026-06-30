@@ -8,13 +8,16 @@ export interface ExampleSignature {
   note: string; // one-line "what's encoded here"
 }
 
-// A curated structure that demonstrates one kind of structural heterogeneity, fetched from RCSB by
-// PDB id and rendered with a representation/colour theme chosen to surface that feature in 3D.
-// `motion`, when set, enables an in-viewer animation: 'frames' scrubs/plays the models, 'tls'
-// animates the rigid-body libration from the TLS tensors, 'wiggle' runs Mol*'s shader thermal
-// animation with per-atom amplitude from the B-factor.
+// A curated structure that demonstrates one kind of structural heterogeneity, rendered with a
+// representation/colour theme chosen to surface that feature in 3D. Normally fetched from RCSB by
+// `pdbId`; if `file` is set it is fetched from that bundled URL instead (used for the synthetic
+// heterogeneity-extension demos, which are not PDB entries). `motion`, when set, enables an
+// in-viewer animation: 'frames' scrubs/plays the models, 'tls' animates the rigid-body libration
+// from the TLS tensors, 'wiggle' runs Mol*'s shader thermal animation from the B-factor.
 export interface StructureExample {
-  pdbId: string;
+  id?: string; // stable key (defaults to pdbId); needed when several demos share a synthetic pdbId
+  pdbId: string; // RCSB id, or a short case label (e.g. "B+") for bundled demos
+  file?: { url: string; name: string }; // bundled local CIF; fetched instead of RCSB when present
   title: string;
   blurb: string;
   view: StructureView;
@@ -125,6 +128,70 @@ export const EXAMPLE_GROUPS: ExampleGroup[] = [
         view: { representation: "ball-and-stick", colorTheme: "uncertainty" },
         signature: { category: "pdbx_refine_tls_group", note: "rigid-body TLS groups; the T/L/S tensors they reference live in _pdbx_refine_tls" },
         motion: "tls",
+      },
+    ],
+  },
+  {
+    // Synthetic, hand-built files (not PDB entries) that carry the proposed _pdbx_alt_groups /
+    // _pdbx_heterogeneity_hierarchy / _pdbx_state_coexistence categories from the reconciliation
+    // memo. Switch the dictionary to "het" (top bar) to see the new categories linked, and use the
+    // heterogeneity controls to colour by network / step through the legal states.
+    label: "Heterogeneity networks (proposed extension)",
+    note: "the proposed correlated-alternate categories — switch the dict to 'het' to see them linked",
+    items: [
+      {
+        id: "het-demo",
+        pdbId: "demo",
+        file: { url: "/examples/het/network_demo.cif", name: "network_demo.cif" },
+        title: "Two serines flip together",
+        blurb: "warm-up · net_1 (both A) / net_2 (both B)",
+        view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
+        signature: { category: "pdbx_alt_groups", note: "two networks (net_1/net_2) each select the A or B atoms of Ser34 + Ser89" },
+      },
+      {
+        id: "het-a",
+        pdbId: "A",
+        file: { url: "/examples/het/case_a_rotamer.cif", name: "case_a_rotamer.cif" },
+        title: "One residue, two rotamers",
+        blurb: "baseline · plain altloc, no new categories needed",
+        view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
+        signature: { category: "atom_site", field: "label_alt_id", note: "a single side chain in two positions — the new categories earn their keep only from case B" },
+      },
+      {
+        id: "het-b",
+        pdbId: "B",
+        file: { url: "/examples/het/case_b_network.cif", name: "case_b_network.cif" },
+        title: "Correlated network across two residues",
+        blurb: "Asp30 + His88 flip together, 50/50",
+        view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
+        signature: { category: "pdbx_alt_groups", note: "net_1/net_2 name which alternates across the structure are one state" },
+      },
+      {
+        id: "het-bplus",
+        pdbId: "B+",
+        file: { url: "/examples/het/case_b_plus_atom.cif", name: "case_b_plus_atom.cif" },
+        title: "Split below the altloc letter",
+        blurb: "Lys78 backbone vs side chain · split by label_atom_id",
+        view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
+        signature: { category: "pdbx_alt_groups", field: "label_atom_id", note: "the atom-level escape hatch: networks separated by atom name, not residue or letter" },
+      },
+      {
+        id: "het-c",
+        pdbId: "C",
+        file: { url: "/examples/het/case_c_nesting.cif", name: "case_c_nesting.cif" },
+        title: "Compositional + conformational, nested",
+        blurb: "apo 0.70 / bound 0.30 → ligand poses 0.20 + 0.10",
+        view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
+        signature: { category: "pdbx_heterogeneity_hierarchy", note: "the ligand poses nest under 'bound'; no ligand co-occurs with apo, with no exclusion row" },
+      },
+      {
+        id: "het-d",
+        pdbId: "D",
+        file: { url: "/examples/het/case_d_metal.cif", name: "case_d_metal.cif" },
+        title: "Multi-chain metal coordination",
+        blurb: "Ca at a two-chain interface · explicit NOT exclusion",
+        view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
+        signature: { category: "pdbx_state_coexistence", note: "the one case where the optional NOT exclusion table earns its place" },
       },
     ],
   },

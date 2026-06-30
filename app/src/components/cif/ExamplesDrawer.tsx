@@ -42,7 +42,7 @@ export default function ExamplesDrawer({ onPick }: { onPick: (ex: StructureExamp
               {g.note && <div className="px-3 pb-1 text-[10px] leading-tight text-slate-400">{g.note}</div>}
               {g.items.map((ex) => (
                 <button
-                  key={ex.pdbId}
+                  key={ex.id ?? ex.pdbId}
                   onClick={() => {
                     onPick(ex);
                     setOpen(false);

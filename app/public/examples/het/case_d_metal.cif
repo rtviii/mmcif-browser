@@ -1,0 +1,88 @@
+data_case_d_metal
+#
+# Case D (the frontier): one Ca at a two-chain interface, coordinated by acidic residues from
+# chains A and B, each modelled in alternates. sphere_a / sphere_b are the coordination networks;
+# they share the coexistence group "coord_sphere" and additionally carry an explicit NOT row.
+# _struct_conn carries the alternate-specific metalc bonds. (Spheres C/D omitted for brevity.)
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+_atom_site.pdbx_formal_charge
+_atom_site.auth_seq_id
+_atom_site.auth_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_atom_id
+_atom_site.pdbx_PDB_model_num
+ATOM   1 O OD1 A ASP A 1 20  ? 10.220 5.110 8.330 0.25 12.40 -1 20  ASP A OD1 1
+ATOM   2 O OD1 B ASP A 1 20  ? 10.310 5.020 8.470 0.25 12.95 -1 20  ASP A OD1 1
+ATOM   3 O OE1 A GLU A 1 31  ? 12.880 5.660 8.010 0.25 13.10 -1 31  GLU A OE1 1
+ATOM   4 O OE1 B GLU A 1 31  ? 12.770 5.540 8.220 0.25 13.55 -1 31  GLU A OE1 1
+ATOM   5 O OD1 A ASP B 3 55  ? 11.040 7.980 8.520 0.25 12.70 -1 55  ASP B OD1 1
+ATOM   6 O OD1 B ASP B 3 55  ? 11.150 8.090 8.360 0.25 13.22 -1 55  ASP B OD1 1
+HETATM 7 CA CA A CA  A 4 201 ? 11.380 6.450 8.290 0.25 11.80 +2 201 CA  A CA  1
+HETATM 8 CA CA B CA  A 4 201 ? 11.420 6.510 8.350 0.25 12.05 +2 201 CA  A CA  1
+#
+loop_
+_pdbx_alt_groups.id
+_pdbx_alt_groups.alt_group_id
+_pdbx_alt_groups.auth_asym_id
+_pdbx_alt_groups.auth_seq_id_start
+_pdbx_alt_groups.auth_seq_id_end
+_pdbx_alt_groups.label_alt_id
+_pdbx_alt_groups.label_atom_id
+1 sphere_a A 20  20  A .
+2 sphere_a A 31  31  A .
+3 sphere_a B 55  55  A .
+4 sphere_a A 201 201 A .
+5 sphere_b A 20  20  B .
+6 sphere_b A 31  31  B .
+7 sphere_b B 55  55  B .
+8 sphere_b A 201 201 B .
+#
+loop_
+_pdbx_heterogeneity_hierarchy.alt_group_id
+_pdbx_heterogeneity_hierarchy.coexistence_group_id
+_pdbx_heterogeneity_hierarchy.parent_alt_groups_id
+base     .            .
+sphere_a coord_sphere base
+sphere_b coord_sphere base
+#
+loop_
+_pdbx_state_coexistence.id
+_pdbx_state_coexistence.rule
+_pdbx_state_coexistence.heterogeneity_id
+_pdbx_state_coexistence.heterogeneity_ids
+1 NOT sphere_a sphere_b
+#
+loop_
+_struct_conn.id
+_struct_conn.conn_type_id
+_struct_conn.ptnr1_label_asym_id
+_struct_conn.ptnr1_label_seq_id
+_struct_conn.ptnr1_label_atom_id
+_struct_conn.pdbx_ptnr1_label_alt_id
+_struct_conn.ptnr2_label_asym_id
+_struct_conn.ptnr2_label_seq_id
+_struct_conn.ptnr2_label_atom_id
+_struct_conn.pdbx_ptnr2_label_alt_id
+metalc1 metalc A 20  OD1 A A 201 CA A
+metalc2 metalc A 31  OE1 A A 201 CA A
+metalc3 metalc B 55  OD1 A A 201 CA A
+metalc4 metalc A 20  OD1 B A 201 CA B
+metalc5 metalc A 31  OE1 B A 201 CA B
+metalc6 metalc B 55  OD1 B A 201 CA B
+#

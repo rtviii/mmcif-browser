@@ -1,0 +1,74 @@
+data_case_c_nesting
+#
+# Case C: apo (70%) vs bound (30%); the bound state nests two ligand poses (0.20 + 0.10 = 0.30).
+# Tyr120 carries the protein conformation, LIG301 is the ligand. The nesting forbids a ligand
+# co-occurring with apo, with NO exclusion row. base = everything single-conformer (not listed).
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+_atom_site.pdbx_formal_charge
+_atom_site.auth_seq_id
+_atom_site.auth_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_atom_id
+_atom_site.pdbx_PDB_model_num
+ATOM   1  C CB  A TYR A 1 120 ? 25.110 30.220 12.040 0.30 15.20 ? 120 TYR A CB  1
+ATOM   2  C CG  A TYR A 1 120 ? 25.880 31.330 12.700 0.30 16.05 ? 120 TYR A CG  1
+ATOM   3  C CD1 A TYR A 1 120 ? 27.220 31.220 13.010 0.30 16.90 ? 120 TYR A CD1 1
+ATOM   4  C CD2 A TYR A 1 120 ? 25.270 32.540 13.010 0.30 16.84 ? 120 TYR A CD2 1
+ATOM   5  C CE1 A TYR A 1 120 ? 27.930 32.300 13.610 0.30 17.55 ? 120 TYR A CE1 1
+ATOM   6  C CE2 A TYR A 1 120 ? 25.970 33.620 13.610 0.30 17.41 ? 120 TYR A CE2 1
+ATOM   7  C CZ  A TYR A 1 120 ? 27.300 33.500 13.910 0.30 18.02 ? 120 TYR A CZ  1
+ATOM   8  O OH  A TYR A 1 120 ? 28.000 34.580 14.510 0.30 19.33 ? 120 TYR A OH  1
+ATOM   9  C CB  B TYR A 1 120 ? 25.040 30.110 11.880 0.70 15.80 ? 120 TYR A CB  1
+ATOM  10  C CG  B TYR A 1 120 ? 25.700 31.020 12.880 0.70 16.62 ? 120 TYR A CG  1
+ATOM  11  C CD1 B TYR A 1 120 ? 27.010 30.770 13.300 0.70 17.40 ? 120 TYR A CD1 1
+ATOM  12  C CD2 B TYR A 1 120 ? 25.040 32.160 13.360 0.70 17.33 ? 120 TYR A CD2 1
+ATOM  13  C CE1 B TYR A 1 120 ? 27.650 31.620 14.210 0.70 18.07 ? 120 TYR A CE1 1
+ATOM  14  C CE2 B TYR A 1 120 ? 25.680 33.010 14.270 0.70 17.96 ? 120 TYR A CE2 1
+ATOM  15  C CZ  B TYR A 1 120 ? 26.980 32.740 14.680 0.70 18.55 ? 120 TYR A CZ  1
+ATOM  16  O OH  B TYR A 1 120 ? 27.620 33.580 15.580 0.70 19.90 ? 120 TYR A OH  1
+HETATM 17 C C1  A LIG B 2 301 ? 29.110 35.880 15.220 0.20 21.40 ? 301 LIG A C1  1
+HETATM 18 N N1  A LIG B 2 301 ? 30.330 36.020 14.620 0.20 22.05 ? 301 LIG A N1  1
+HETATM 19 O O1  A LIG B 2 301 ? 28.770 36.770 16.010 0.20 22.88 ? 301 LIG A O1  1
+HETATM 20 C C1  B LIG B 2 301 ? 29.330 35.520 15.660 0.10 23.10 ? 301 LIG A C1  1
+HETATM 21 N N1  B LIG B 2 301 ? 30.610 35.430 15.220 0.10 23.74 ? 301 LIG A N1  1
+HETATM 22 O O1  B LIG B 2 301 ? 28.990 36.330 16.560 0.10 24.51 ? 301 LIG A O1  1
+#
+loop_
+_pdbx_alt_groups.id
+_pdbx_alt_groups.alt_group_id
+_pdbx_alt_groups.auth_asym_id
+_pdbx_alt_groups.auth_seq_id_start
+_pdbx_alt_groups.auth_seq_id_end
+_pdbx_alt_groups.label_alt_id
+_pdbx_alt_groups.label_atom_id
+1 apo   A 120 120 B .
+2 bound A 120 120 A .
+3 lig_a A 301 301 A .
+4 lig_b A 301 301 B .
+#
+loop_
+_pdbx_heterogeneity_hierarchy.alt_group_id
+_pdbx_heterogeneity_hierarchy.coexistence_group_id
+_pdbx_heterogeneity_hierarchy.parent_alt_groups_id
+base  .             .
+apo   protein_state base
+bound protein_state base
+lig_a ligand_pose   bound
+lig_b ligand_pose   bound
+#

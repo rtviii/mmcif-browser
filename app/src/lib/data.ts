@@ -1,10 +1,17 @@
-import type { Dictionary, GraphData } from "./types";
+import type { DictVariant, Dictionary, GraphData } from "./types";
+
+// Each variant is a separate artifact pair under /public/data (see pipeline/build_artifacts.py).
+const VARIANT_FILES: Record<DictVariant, { dict: string; graph: string }> = {
+  base: { dict: "/data/dictionary.json", graph: "/data/graph.json" },
+  het: { dict: "/data/dictionary.het.json", graph: "/data/graph.het.json" },
+};
 
 // Artifacts live in /public/data and are fetched at runtime (too big to bundle).
-export async function loadData(): Promise<{ dict: Dictionary; graph: GraphData }> {
+export async function loadData(variant: DictVariant = "base"): Promise<{ dict: Dictionary; graph: GraphData }> {
+  const f = VARIANT_FILES[variant];
   const [dict, graph] = await Promise.all([
-    fetch("/data/dictionary.json").then((r) => r.json() as Promise<Dictionary>),
-    fetch("/data/graph.json").then((r) => r.json() as Promise<GraphData>),
+    fetch(f.dict).then((r) => r.json() as Promise<Dictionary>),
+    fetch(f.graph).then((r) => r.json() as Promise<GraphData>),
   ]);
   return { dict, graph };
 }

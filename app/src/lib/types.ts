@@ -1,10 +1,17 @@
 // Mirrors the JSON emitted by pipeline/build_artifacts.py
 
+// Which dictionary the app is reading: the authoritative wwPDB dictionary ("base") or that
+// dictionary plus the proposed heterogeneity extension ("het"). Selected at runtime.
+export type DictVariant = "base" | "het";
+
 export interface DictMeta {
   title: string;
   version: string;
+  variant: DictVariant;
+  label: string; // human suffix, e.g. "+ heterogeneity extension (proposed)"
   source_url: string;
   source_file: string;
+  source_files?: string[];
   source_sha256: string;
   num_categories: number;
   num_items: number;

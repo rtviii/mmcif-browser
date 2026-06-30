@@ -1,13 +1,15 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type ParsedCif, parseCif } from "@/lib/cif";
 import type { StructureExample } from "@/lib/molstar/examples";
+import { HET_PALETTE, type HetModel, parseHeterogeneity } from "@/lib/molstar/het";
 import type { StructureView } from "@/lib/molstar/style";
 import { parseTlsGroups, type TlsGroup } from "@/lib/molstar/tls";
 import type { MolstarViewer as MolstarViewerInstance } from "@/lib/molstar/viewer";
 import { useTabsStore } from "@/lib/tabs-store";
 import ExamplesDrawer from "./cif/ExamplesDrawer";
+import HeterogeneityPanel from "./cif/HeterogeneityPanel";
 import SourceInspector from "./cif/SourceInspector";
 
 const MolstarViewer = dynamic(() => import("./MolstarViewer"), { ssr: false });
@@ -44,6 +46,14 @@ export default function StructureTab({ id, active }: { id: string; active: boole
   // groups parsed from the file when the example demonstrates TLS.
   const [example, setExample] = useState<StructureExample | null>(null);
   const [tlsGroups, setTlsGroups] = useState<TlsGroup[] | null>(null);
+
+  // Proposed heterogeneity-extension networks parsed from the file (_pdbx_alt_groups etc.).
+  // `hetColor` = colour atoms by network (the 3D facility); `hetState` indexes the enumerated legal
+  // states (-1 = show all networks); `hetPanel` toggles the relationship/states panel.
+  const [hetModel, setHetModel] = useState<HetModel | null>(null);
+  const [hetColor, setHetColor] = useState(true);
+  const [hetState, setHetState] = useState(-1);
+  const [hetPanel, setHetPanel] = useState(false);
 
   // Frame playback (auto-advance the model index) and TLS libration playback.
   const [framePlaying, setFramePlaying] = useState(false);
@@ -102,6 +112,40 @@ export default function StructureTab({ id, active }: { id: string; active: boole
       void viewer.wiggleSelection();
       setWiggle("selection");
     }
+  };
+
+  // Networks prepared for the viewer (a colour + the membership selectors), only when colour-by-
+  // network is on. Identity is stable across stepping, so the viewer isn't rebuilt as states change.
+  const hetNetworks = useMemo(
+    () =>
+      hetModel && hetColor
+        ? hetModel.networks.map((n, i) => ({
+            id: n.id,
+            color: HET_PALETTE[i % HET_PALETTE.length],
+            selectors: n.members,
+          }))
+        : null,
+    [hetModel, hetColor],
+  );
+
+  // Isolate a legal state in 3D: show base + that state's networks (idx -1 = show all networks).
+  const applyHetState = (idx: number) => {
+    if (!viewer || !hetModel) return;
+    setHetState(idx);
+    if (idx < 0 || idx >= hetModel.states.length) viewer.showAllNetworks();
+    else viewer.setVisibleNetworks(new Set(hetModel.states[idx].networks));
+  };
+  const stepHetState = (delta: number) => {
+    if (!hetModel || !hetModel.states.length) return;
+    const n = hetModel.states.length;
+    let next = hetState + delta;
+    if (next < -1) next = n - 1;
+    if (next >= n) next = -1;
+    applyHetState(next);
+  };
+  const toggleHetColor = () => {
+    setHetColor((c) => !c);
+    setHetState(-1);
   };
 
   // Stop any running animation when the tab goes inactive or unmounts.
@@ -163,6 +207,12 @@ export default function StructureTab({ id, active }: { id: string; active: boole
         if (cancelled) return;
         setParsed(p);
         setBlockIndex(0);
+        // Detect the proposed heterogeneity categories; if present, default to colour-by-network.
+        const hm = parseHeterogeneity(p.raw);
+        setHetModel(hm);
+        setHetColor(!!hm);
+        setHetState(-1);
+        setHetPanel(false);
       })
       .catch((e) => !cancelled && setError(e?.message ?? String(e)))
       .finally(() => !cancelled && setLoading(false));
@@ -171,13 +221,16 @@ export default function StructureTab({ id, active }: { id: string; active: boole
     };
   }, [file]);
 
-  // Reset the example/heterogeneity context (called on any plain file/PDB load).
+  // Reset the example/heterogeneity context (called on any plain file/PDB load). Clearing hetModel
+  // here means the first viewer load of a new file renders normally; the parse effect re-enables
+  // colour-by-network once the new file's networks are known.
   function resetHeterogeneity() {
     stopFrameAnim();
     setTlsPlaying(false);
     setWiggle("off");
     setExample(null);
     setTlsGroups(null);
+    setHetModel(null);
     setView(undefined);
     setModelIndex(0);
   }
@@ -224,15 +277,19 @@ export default function StructureTab({ id, active }: { id: string; active: boole
     setView(ex.view);
     setModelIndex(0);
     setTlsGroups(null);
+    setHetModel(null);
     try {
-      const res = await fetch(`https://files.rcsb.org/download/${ex.pdbId}.cif`);
-      if (!res.ok) throw new Error(`fetch ${ex.pdbId}: HTTP ${res.status}`);
+      // Bundled demos (the heterogeneity examples) carry a local `file`; everything else is an RCSB id.
+      const url = ex.file ? ex.file.url : `https://files.rcsb.org/download/${ex.pdbId}.cif`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`fetch ${ex.file?.name ?? ex.pdbId}: HTTP ${res.status}`);
       const text = await res.text();
       if (ex.motion === "tls") {
         const parsedForTls = await parseCif(text, false);
         setTlsGroups(parseTlsGroups(parsedForTls.raw));
       }
-      setFile({ data: text, binary: false, name: `${ex.pdbId}.cif` });
+      const name = ex.file?.name ?? `${ex.pdbId}.cif`;
+      setFile({ data: text, binary: false, name });
       setTitle(id, `${ex.pdbId} · ${ex.title}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -378,6 +435,55 @@ export default function StructureTab({ id, active }: { id: string; active: boole
             {wiggle === "selection" ? "stop sel. wiggle" : "wiggle selection"}
           </button>
         )}
+        {hetModel && (
+          <div className="flex shrink-0 items-center gap-1.5 rounded border border-slate-200 bg-slate-50 px-2 py-0.5">
+            <button
+              onClick={toggleHetColor}
+              className={`rounded border px-1.5 py-0 ${
+                hetColor
+                  ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+              title="colour each network distinctly (base grey)"
+            >
+              {hetColor ? "networks ✓" : "color by network"}
+            </button>
+            {hetColor && hetModel.states.length > 0 && (
+              <>
+                <button
+                  onClick={() => stepHetState(-1)}
+                  className="rounded px-1 text-slate-600 hover:bg-slate-200"
+                  title="previous state"
+                >
+                  ‹
+                </button>
+                <span className="tabular-nums text-slate-600">
+                  {hetState === -1
+                    ? `all states (${hetModel.states.length})`
+                    : `state ${hetState + 1}/${hetModel.states.length}`}
+                </span>
+                <button
+                  onClick={() => stepHetState(1)}
+                  className="rounded px-1 text-slate-600 hover:bg-slate-200"
+                  title="next state"
+                >
+                  ›
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => setHetPanel((p) => !p)}
+              className={`rounded border px-1.5 py-0 ${
+                hetPanel
+                  ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+              title="show the networks / hierarchy / states panel"
+            >
+              relationships
+            </button>
+          </div>
+        )}
         {block && <span className="mx-1 h-5 w-px shrink-0 bg-slate-200" />}
         <div ref={setToolbarSlot} className="flex min-w-0 flex-1 items-center gap-2" />
       </div>
@@ -413,18 +519,28 @@ export default function StructureTab({ id, active }: { id: string; active: boole
           className="w-1 shrink-0 cursor-col-resize bg-slate-200 transition-colors hover:bg-indigo-400"
         />
 
-        <div className="min-w-0 flex-1 bg-white">
+        <div className="relative min-w-0 flex-1 bg-white">
           <MolstarViewer
             data={file?.data ?? null}
             binary={file?.binary ?? false}
             view={view}
             tlsGroups={tlsGroups}
+            hetNetworks={hetNetworks}
             onReady={setViewer}
             onLoaded={(info) => {
               setModelCount(info.modelCount);
               setModelIndex(0);
             }}
           />
+          {hetModel && hetPanel && (
+            <HeterogeneityPanel
+              model={hetModel}
+              viewer={viewer}
+              activeStateIndex={hetState}
+              onPickState={applyHetState}
+              onClose={() => setHetPanel(false)}
+            />
+          )}
         </div>
       </div>
     </div>

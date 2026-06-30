@@ -250,6 +250,71 @@ triangle) are gone.
   description, `helix/strand X a–b`, bond, chem_comp name) — sky for hover, indigo for the pin — so the
   faint Mol* highlight is no longer the only signal. Verified: the "Stathmin-4" label tethered to entity 3.
 
+### Heterogeneity extension — forked dict + network/state/relationship viz (done, branch `reconciliation_memo`, UNCOMMITTED)
+2026-06-30. First feature on the new `reconciliation_memo` branch (off tip `1d61c4f`). Adds support for the
+three proposed correlated-alternate categories from the reconciliation memo
+(`~/dev/rtviii.github.io/posts/heterogeneity-proposal/_reconciliation-memo.md`) — `_pdbx_alt_groups`,
+`_pdbx_heterogeneity_hierarchy`, `_pdbx_state_coexistence` — so they can be shown to a collaborator in an
+obvious, illustrative way. `atom_site` is untouched; every relationship is a pointer into existing keys.
+Typecheck clean; pipeline + Mol* CIF parse + field reads + state enumeration verified in node; in-browser
+verification left to the user. Work split into the design's seven phases:
+
+The mental model that shaped it — TWO "dictionaries", orthogonal: the SCHEMA artifacts (annotation only:
+tooltips, FK graph, reference panel, lenses) vs the loaded CIF FILE (content the inspector/3D actually
+draw). The version dropdown governs annotation; the demo files + Mol* work govern what's drawn.
+
+- **Forked dictionary (DDL2 ext + pipeline).** New `pipeline/data/mmcif_pdbx_v50_het_ext.dic` defines the
+  three categories with real DDL2 parent/child links (`_pdbx_alt_groups.{auth_asym_id,label_alt_id,
+  label_atom_id}` → `_atom_site.*`; hierarchy + coexistence → `_pdbx_alt_groups.alt_group_id`).
+  `build_artifacts.py` refactored into `build(dic_paths, dict_name, graph_name, variant, label)` called
+  twice — base (`dictionary.json`/`graph.json`) and het (`[base, ext]` read as ONE container list →
+  `dictionary.het.json`/`graph.het.json`). `meta` now carries `variant` + `label` + `source_files`; het
+  build has extra asserts (3 categories present, `pdbx_alt_groups → atom_site` + `hierarchy →
+  pdbx_alt_groups` edges). Het build: 610 cats / 6815 items / 628 edges. KEY DDL2 FINDING (verified
+  empirically against py-mmcif `getFullParentList`): declaring `_item_linked.child_name/parent_name` in the
+  CHILD item's own save frame is sufficient to register the FK edge — no need to edit the base dict's parent
+  frames. `auth_seq_id_start/end` are range bounds, intentionally left unlinked.
+- **Runtime version dropdown.** Global selector in `NavBar.tsx` (`DictVariantSelector`); affects both pages.
+  `store.ts` gained `variant` + `setVariant` (re-fetch + rebuild `nodeIndex`/`adj`/`itemChildren`/`search`
+  via a new shared `fetchAndIndex`); `init()` guard relaxed to "loaded AND same variant". `data.ts`
+  `loadData(variant)` picks the artifact pair. `types.ts` `DictVariant` + `DictMeta.{variant,label}`.
+  Switching is cheap: loaded structures don't reparse, only annotations change. Under "base" the new
+  categories read as unknown; under "het" they light up (hover defs, the reference panel showing
+  `pdbx_alt_groups → atom_site`, the `/dictionary` graph).
+- **Demo files + bundled-example loading.** `app/public/examples/het/{network_demo,case_a_rotamer,
+  case_b_network,case_b_plus_atom,case_c_nesting,case_d_metal}.cif` — verbatim from the memo (warm-up +
+  cases A–D, 8–22 atoms each). `examples.ts` `StructureExample` gained optional `id` + `file:{url,name}`;
+  `StructureTab.loadExample` fetches `ex.file.url` when present (else RCSB); `ExamplesDrawer` keys by
+  `id ?? pdbId`. New "Heterogeneity networks (proposed extension)" example group.
+- **Parse + state enumeration (`lib/molstar/het.ts`).** Mirrors `tls.ts` (`asMolCifFile(raw).blocks[0]`,
+  `getField().str/int/float`; `norm()` maps `.`/`?`/`""` to empty). `parseHeterogeneity(raw): HetModel | null`
+  → networks (members + coexistence group + parent + representative occupancy read off a member atom in
+  `atom_site`), exclusions, and `enumerateStates()`. The enumeration: within a coexistence group under a
+  parent pick exactly one (mutually exclusive); independent groups multiply (cartesian); a child group opens
+  only if its parent is chosen (nesting); NOT rows prune. Validated against the memo: B→2, B+→4 (independent
+  loop×rotamer), C→3 (nested, never ligand-with-apo, p=0.7/0.2/0.1), D→2 (with exclusion). State probability
+  = product of occupancies of chosen networks with no chosen child.
+- **3D facilities (`queries.ts`, `viewer.ts`).** `buildAltGroupExpression(selectors)` (chain + residue range
+  + altloc, optional atom name; OR'd via `MS.struct.combinator.merge`) and `buildHetBaseExpression`
+  (`exceptBy(all, union)`). `viewer.buildHeterogeneity(trajectory, networks)` (parallel to `buildTls`) renders
+  ONE coloured `StructureSelectionFromExpression` sub-structure per network + a grey "base" complement, each
+  toggleable. `setVisibleNetworks(ids)` (via `setSubtreeVisibility`) drives the state stepper; `showAllNetworks`;
+  `highlightNetwork`/`focusNetwork` use each network's own sub-structure loci. `load()` gained a `het` option
+  chosen over tls/normal; `MolstarViewer.tsx` threads a `hetNetworks` prop. The demo files contain ONLY the
+  alternate atoms (base is implicit/empty), so per-network sub-structures isolate cleanly; the `exceptBy` base
+  is empty for them and only matters for a real annotated structure.
+- **Relationship panel + wiring (`HeterogeneityPanel.tsx`, `StructureTab.tsx`, `classify.ts`).** Floating panel
+  over the 3D pane: the hierarchy tree (base → children, grouped by coexistence group with occupancy-sum
+  checks), the NOT exclusions in red, and the enumerated legal states (clickable → isolate; with p). Hover a
+  network → 3D highlight; click → focus. `StructureTab` computes `hetModel` post-parse, defaults colour-by-
+  network ON when present, and adds the het control cluster (color-by-network toggle / state stepper ‹ N/M › /
+  relationships toggle). The three categories tagged `["heterogeneity"]` in `classify.ts`.
+
+Known limits / follow-ups: a het file double-loads briefly (normal render, then network colouring once parse
+completes — harmless flash on tiny files); the `exceptBy` "base" path is untested in WebGL (empty for the
+demos); the next obvious step is annotating one REAL entry (e.g. 5E1N for case D) with the categories, and a
+3D exclusion overlay (currently the panel is the primary surface for NOT rows).
+
 ## Next
 
 ### Reference graph — what links to / from any element ("dig deeper")

@@ -2,7 +2,7 @@
 import "molstar/build/viewer/molstar.css";
 import { useEffect, useRef } from "react";
 import { useMolstarViewer } from "@/hooks/useMolstarViewer";
-import type { MolstarViewer as MolstarViewerInstance } from "@/lib/molstar/viewer";
+import type { HetVizNetwork, MolstarViewer as MolstarViewerInstance } from "@/lib/molstar/viewer";
 import type { StructureView } from "@/lib/molstar/style";
 import type { TlsGroup } from "@/lib/molstar/tls";
 
@@ -13,6 +13,7 @@ export default function MolstarViewer({
   binary,
   view,
   tlsGroups,
+  hetNetworks,
   onReady,
   onLoaded,
 }: {
@@ -20,6 +21,7 @@ export default function MolstarViewer({
   binary: boolean;
   view?: StructureView;
   tlsGroups?: TlsGroup[] | null;
+  hetNetworks?: HetVizNetwork[] | null;
   onReady?: (viewer: MolstarViewerInstance | null) => void;
   onLoaded?: (info: { modelCount: number }) => void;
 }) {
@@ -43,7 +45,12 @@ export default function MolstarViewer({
       try {
         await viewer.clear();
         if (cancelled) return;
-        await viewer.load(data, { label: "structure", view, tlsGroups: tlsGroups ?? undefined });
+        await viewer.load(data, {
+          label: "structure",
+          view,
+          tlsGroups: tlsGroups ?? undefined,
+          het: hetNetworks ?? undefined,
+        });
         if (cancelled) return;
         viewer.resetCamera();
         onLoadedRef.current?.({ modelCount: viewer.getModelCount() });
@@ -54,7 +61,7 @@ export default function MolstarViewer({
     return () => {
       cancelled = true;
     };
-  }, [viewer, ready, data, binary, view, tlsGroups]);
+  }, [viewer, ready, data, binary, view, tlsGroups, hetNetworks]);
 
   return (
     <div className="relative h-full w-full">

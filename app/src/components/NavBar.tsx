@@ -2,7 +2,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { useStore } from "@/lib/store";
 import { useTabsStore } from "@/lib/tabs-store";
+import type { DictVariant } from "@/lib/types";
 
 // Inspector is the default page (/); the dictionary graph moved to /dictionary. The page switch is
 // tucked behind a hover on the "mmCIF" logo to keep the top bar uncluttered.
@@ -88,7 +90,32 @@ export default function NavBar() {
         )}
       </div>
       {onInspector && <InspectorTabs />}
+      <DictVariantSelector />
     </header>
+  );
+}
+
+// Global dictionary-variant switch. Affects both pages: the schema the inspector annotates against
+// (tooltips, reference panel) and the dictionary graph. Switching to "het" lights up the proposed
+// heterogeneity categories; under "base" they read as unknown.
+function DictVariantSelector() {
+  const variant = useStore((s) => s.variant);
+  const setVariant = useStore((s) => s.setVariant);
+  const version = useStore((s) => s.dict?.meta.version ?? s.graph?.meta.version ?? null);
+  const v = version ? `v${version}` : "PDBx/mmCIF";
+  return (
+    <div className="ml-auto flex shrink-0 items-center gap-1.5">
+      <span className="text-[10px] uppercase tracking-wide text-neutral-600">dict</span>
+      <select
+        value={variant}
+        onChange={(e) => void setVariant(e.target.value as DictVariant)}
+        title="mmCIF dictionary variant — switch to 'het' to light up the proposed heterogeneity categories"
+        className="rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[11px] text-neutral-300 outline-none hover:border-neutral-600 focus:border-indigo-500"
+      >
+        <option value="base">{v} · authoritative</option>
+        <option value="het">{v} · + heterogeneity ext</option>
+      </select>
+    </div>
   );
 }
 

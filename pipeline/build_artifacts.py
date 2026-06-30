@@ -1,9 +1,16 @@
 """
 Parse the pinned PDBx/mmCIF dictionary into structured JSON artifacts.
 
-Outputs (committed, consumed client-side by the Next.js app):
-  app/public/data/dictionary.json  -- categories, items, types, groups (the "database")
-  app/public/data/graph.json       -- category-level nodes + relational edges (the ER backbone)
+Two variants are emitted (both committed, consumed client-side by the Next.js app):
+  base  -- the authoritative wwPDB dictionary, untouched
+             dictionary.json      graph.json
+  het   -- base + the proposed heterogeneity extension (3 extra categories)
+             dictionary.het.json  graph.het.json
+
+The app picks a variant at runtime (the dictionary-version dropdown). The "het" build is
+the base dictionary read together with mmcif_pdbx_v50_het_ext.dic, so its FK graph and item
+definitions are derived by the same pipeline -- the extension just adds three categories and
+their pointers into ATOM_SITE / PDBX_ALT_GROUPS.
 
 Run: pipeline/.venv/bin/python pipeline/build_artifacts.py
 """
@@ -18,6 +25,7 @@ from mmcif.api.DictionaryApi import DictionaryApi
 
 ROOT = Path(__file__).resolve().parent.parent
 DIC = ROOT / "pipeline" / "data" / "mmcif_pdbx_v50.dic"
+HET_EXT = ROOT / "pipeline" / "data" / "mmcif_pdbx_v50_het_ext.dic"
 OUT = ROOT / "app" / "public" / "data"
 SOURCE_URL = "https://mmcif.wwpdb.org/dictionaries/ascii/mmcif_pdbx_v50.dic"
 
@@ -62,12 +70,19 @@ def cat_of(item_name: str) -> str:
     return item_name.lstrip("_").split(".", 1)[0]
 
 
-def main():
+def build(dic_paths, dict_name, graph_name, variant, label):
+    """Parse one or more .dic files into a dictionary/graph artifact pair.
+
+    `dic_paths` are read and merged into a single container list (the base dictionary first,
+    then any extensions), so the extension's pointers resolve against the base definitions.
+    """
     t0 = time.time()
     io = IoAdapterPy()
-    containers = io.readFile(str(DIC))
+    containers = []
+    for p in dic_paths:
+        containers += io.readFile(str(p))
     d = DictionaryApi(containerList=containers, consolidate=True)
-    print(f"loaded dictionary in {time.time() - t0:.1f}s")
+    print(f"[{variant}] loaded {len(dic_paths)} dictionary file(s) in {time.time() - t0:.1f}s")
 
     cat_names = sorted(d.getCategoryList())
 
@@ -177,9 +192,12 @@ def main():
     meta = {
         "title": d.getDictionaryTitle(),
         "version": d.getDictionaryVersion(),
+        "variant": variant,
+        "label": label,
         "source_url": SOURCE_URL,
-        "source_file": DIC.name,
-        "source_sha256": sha256(DIC),
+        "source_file": dic_paths[0].name,
+        "source_files": [p.name for p in dic_paths],
+        "source_sha256": sha256(dic_paths[0]),
         "num_categories": len(categories),
         "num_items": len(items),
         "num_edges": len(edges),
@@ -187,14 +205,14 @@ def main():
     }
 
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "dictionary.json").write_text(
+    (OUT / dict_name).write_text(
         json.dumps(
             {"meta": meta, "types": types, "groups": groups,
              "categories": categories, "items": items},
             indent=None, separators=(",", ":"), ensure_ascii=False,
         )
     )
-    (OUT / "graph.json").write_text(
+    (OUT / graph_name).write_text(
         json.dumps({"meta": meta, "nodes": nodes, "edges": edges},
                    indent=None, separators=(",", ":"), ensure_ascii=False)
     )
@@ -207,13 +225,32 @@ def main():
     assert items["_atom_site.label_entity_id"].get("parents") == ["_entity.id"]
     assert any(e["source"] == "atom_site" and e["target"] == "entity" for e in edges)
 
-    print(f"OK  dict v{meta['version']}  sha {meta['source_sha256'][:12]}")
+    # --- extension-specific checks: the 3 new categories and their key FK edges ---
+    if variant == "het":
+        for c in ("pdbx_alt_groups", "pdbx_heterogeneity_hierarchy", "pdbx_state_coexistence"):
+            assert c in categories, f"missing extension category: {c}"
+        assert items["_pdbx_alt_groups.auth_asym_id"].get("parents") == ["_atom_site.auth_asym_id"], \
+            "pdbx_alt_groups.auth_asym_id is not linked to atom_site.auth_asym_id"
+        assert any(e["source"] == "pdbx_alt_groups" and e["target"] == "atom_site" for e in edges), \
+            "missing edge pdbx_alt_groups -> atom_site"
+        assert any(e["source"] == "pdbx_heterogeneity_hierarchy" and e["target"] == "pdbx_alt_groups"
+                   for e in edges), "missing edge pdbx_heterogeneity_hierarchy -> pdbx_alt_groups"
+
+    print(f"OK  [{variant}] dict v{meta['version']}  sha {meta['source_sha256'][:12]}")
     print(f"    categories={meta['num_categories']}  items={meta['num_items']}  "
           f"edges={meta['num_edges']}  groups={meta['num_groups']}  types={len(types)}")
-    for f in ("dictionary.json", "graph.json"):
+    for f in (dict_name, graph_name):
         kb = (OUT / f).stat().st_size / 1024
         print(f"    {f}: {kb:.0f} KB")
-    print(f"done in {time.time() - t0:.1f}s")
+    print(f"    done in {time.time() - t0:.1f}s")
+    return meta
+
+
+def main():
+    build([DIC], "dictionary.json", "graph.json",
+          "base", "authoritative wwPDB dictionary")
+    build([DIC, HET_EXT], "dictionary.het.json", "graph.het.json",
+          "het", "+ heterogeneity extension (proposed)")
 
 
 if __name__ == "__main__":
