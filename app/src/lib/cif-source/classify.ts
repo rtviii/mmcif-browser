@@ -130,6 +130,10 @@ const CATEGORY_LENS: Record<string, Lens[]> = {
   pdbx_struct_mod_residue: ["heterogeneity"],
   pdbx_unobs_or_zero_occ_residues: ["heterogeneity"],
   pdbx_unobs_or_zero_occ_atoms: ["heterogeneity"],
+  // Proposed heterogeneity-extension categories (see mmcif_pdbx_v50_het_ext.dic).
+  pdbx_alt_groups: ["heterogeneity"],
+  pdbx_heterogeneity_hierarchy: ["heterogeneity"],
+  pdbx_state_coexistence: ["heterogeneity"],
 };
 
 // Ordered prefix fallback, only consulted when groups + overrides yield nothing.

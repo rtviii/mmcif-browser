@@ -1,0 +1,320 @@
+data_mmcif_pdbx_het_ext.dic
+#
+# Proposed heterogeneity extension to the PDBx/mmCIF dictionary.
+#
+# Three additive categories that name correlated alternate-conformation "networks",
+# nest them into a hierarchy with mutually-exclusive (occupancy) groups, and optionally
+# list cross-branch exclusions. ATOM_SITE is unchanged; every relationship is expressed
+# by pointers into existing keys. Companion to the reconciliation memo
+# (heterogeneity-proposal/_reconciliation-memo.md).
+#
+# This file is read together with mmcif_pdbx_v50.dic to produce the "v50 + heterogeneity"
+# dictionary variant. It does not stand alone (the parent items it points at live in v50).
+#
+###########################################################################
+#  _pdbx_alt_groups  -- names a network (a set of atoms = one state)
+###########################################################################
+save_pdbx_alt_groups
+   _category.description
+;              Names a heterogeneity network: a set of atoms that together constitute one
+               alternate state of the structure. Each row selects atoms from ATOM_SITE by
+               chain (auth_asym_id), a residue range (auth_seq_id_start..auth_seq_id_end),
+               and an alternate-location id (label_alt_id), optionally narrowed to a single
+               atom (label_atom_id). One network may span several rows (non-contiguous
+               membership across residues, chains, or atoms).
+
+               Part of the proposed heterogeneity extension. ATOM_SITE is not modified;
+               this category only points into it.
+;
+   _category.id              pdbx_alt_groups
+   _category.mandatory_code  no
+   #
+   _category_key.name  "_pdbx_alt_groups.id"
+   #
+   loop_
+   _category_group.id
+     inclusive_group
+   #
+save_
+#
+save__pdbx_alt_groups.id
+   _item_description.description
+;              Unique identifier of this membership record (one row of a network).
+;
+   _item.name            "_pdbx_alt_groups.id"
+   _item.category_id     pdbx_alt_groups
+   _item.mandatory_code  yes
+   #
+   _item_type.code  int
+   #
+save_
+#
+save__pdbx_alt_groups.alt_group_id
+   _item_description.description
+;              The name of the network (alternate state) this membership row belongs to.
+               A network that spans several residues or atoms is written as several rows
+               that share this id. This is the state identity that the altloc letter alone
+               cannot carry across residues.
+;
+   _item.name            "_pdbx_alt_groups.alt_group_id"
+   _item.category_id     pdbx_alt_groups
+   _item.mandatory_code  yes
+   #
+   _item_type.code  code
+   #
+save_
+#
+save__pdbx_alt_groups.auth_asym_id
+   _item_description.description
+;              The chain of the selected atoms. This data item is a pointer to
+               _atom_site.auth_asym_id in the ATOM_SITE category.
+;
+   _item.name            "_pdbx_alt_groups.auth_asym_id"
+   _item.category_id     pdbx_alt_groups
+   _item.mandatory_code  yes
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_linked.child_name
+   _item_linked.parent_name
+     "_pdbx_alt_groups.auth_asym_id"  "_atom_site.auth_asym_id"
+   #
+save_
+#
+save__pdbx_alt_groups.auth_seq_id_start
+   _item_description.description
+;              First author residue number (auth_seq_id) of this membership row's range,
+               inclusive. For a single residue, start and end are equal.
+;
+   _item.name            "_pdbx_alt_groups.auth_seq_id_start"
+   _item.category_id     pdbx_alt_groups
+   _item.mandatory_code  yes
+   #
+   _item_type.code  int
+   #
+save_
+#
+save__pdbx_alt_groups.auth_seq_id_end
+   _item_description.description
+;              Last author residue number (auth_seq_id) of this membership row's range,
+               inclusive.
+;
+   _item.name            "_pdbx_alt_groups.auth_seq_id_end"
+   _item.category_id     pdbx_alt_groups
+   _item.mandatory_code  yes
+   #
+   _item_type.code  int
+   #
+save_
+#
+save__pdbx_alt_groups.label_alt_id
+   _item_description.description
+;              The alternate-location letter the selected atoms carry. This data item is a
+               pointer to _atom_site.label_alt_id in the ATOM_SITE category.
+;
+   _item.name            "_pdbx_alt_groups.label_alt_id"
+   _item.category_id     pdbx_alt_groups
+   _item.mandatory_code  yes
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_linked.child_name
+   _item_linked.parent_name
+     "_pdbx_alt_groups.label_alt_id"  "_atom_site.label_alt_id"
+   #
+save_
+#
+save__pdbx_alt_groups.label_atom_id
+   _item_description.description
+;              Optional atom-level selector. A value of '.' selects every atom in the
+               residue range; otherwise it names a single atom (e.g. OD1), and one row is
+               written per atom. This is the escape hatch that gives the network table atom
+               resolution -- exactly as expressive as a per-atom state label -- without
+               changing ATOM_SITE. This data item is a pointer to _atom_site.label_atom_id.
+;
+   _item.name            "_pdbx_alt_groups.label_atom_id"
+   _item.category_id     pdbx_alt_groups
+   _item.mandatory_code  no
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_linked.child_name
+   _item_linked.parent_name
+     "_pdbx_alt_groups.label_atom_id"  "_atom_site.label_atom_id"
+   #
+save_
+#
+###########################################################################
+#  _pdbx_heterogeneity_hierarchy  -- the tree + occupancy grouping
+###########################################################################
+save_pdbx_heterogeneity_hierarchy
+   _category.description
+;              Places each heterogeneity network (from PDBX_ALT_GROUPS) in a tree and
+               assigns it to a mutually-exclusive (occupancy) group. For each network it
+               records its parent network (parent_alt_groups_id; '.' for a root directly
+               under the implicit single-conformer 'base') and the coexistence group it
+               shares with its siblings (coexistence_group_id).
+
+               The reading rule: alternatives in one coexistence_group_id are mutually
+               exclusive, and that exclusivity is inherited by their descendants. A
+               coexistence group is the same thing a crystallographer calls an occupancy
+               group; the occupancies of its members sum to the occupancy of their parent.
+
+               Part of the proposed heterogeneity extension.
+;
+   _category.id              pdbx_heterogeneity_hierarchy
+   _category.mandatory_code  no
+   #
+   _category_key.name  "_pdbx_heterogeneity_hierarchy.alt_group_id"
+   #
+   loop_
+   _category_group.id
+     inclusive_group
+   #
+save_
+#
+save__pdbx_heterogeneity_hierarchy.alt_group_id
+   _item_description.description
+;              The network this hierarchy row describes. This data item is a pointer to
+               _pdbx_alt_groups.alt_group_id.
+;
+   _item.name            "_pdbx_heterogeneity_hierarchy.alt_group_id"
+   _item.category_id     pdbx_heterogeneity_hierarchy
+   _item.mandatory_code  yes
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_linked.child_name
+   _item_linked.parent_name
+     "_pdbx_heterogeneity_hierarchy.alt_group_id"  "_pdbx_alt_groups.alt_group_id"
+   #
+save_
+#
+save__pdbx_heterogeneity_hierarchy.coexistence_group_id
+   _item_description.description
+;              Names the mutually-exclusive set (occupancy group) this network shares with
+               its siblings. Exactly one network in a coexistence group is present at a
+               time, and their occupancies sum to the occupancy of their parent network.
+               Independent coexistence groups under the same parent vary independently.
+;
+   _item.name            "_pdbx_heterogeneity_hierarchy.coexistence_group_id"
+   _item.category_id     pdbx_heterogeneity_hierarchy
+   _item.mandatory_code  no
+   #
+   _item_type.code  code
+   #
+save_
+#
+save__pdbx_heterogeneity_hierarchy.parent_alt_groups_id
+   _item_description.description
+;              The parent network in the hierarchy, or '.' for a root directly under the
+               implicit 'base' (the always-present single-conformer part of the structure,
+               occupancy 1). This data item is a pointer to _pdbx_alt_groups.alt_group_id.
+;
+   _item.name            "_pdbx_heterogeneity_hierarchy.parent_alt_groups_id"
+   _item.category_id     pdbx_heterogeneity_hierarchy
+   _item.mandatory_code  no
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_linked.child_name
+   _item_linked.parent_name
+     "_pdbx_heterogeneity_hierarchy.parent_alt_groups_id"  "_pdbx_alt_groups.alt_group_id"
+   #
+save_
+#
+###########################################################################
+#  _pdbx_state_coexistence  -- optional cross-branch exclusions (NOT)
+###########################################################################
+save_pdbx_state_coexistence
+   _category.description
+;              Optional sparse list of forbidden combinations of networks. Each row says
+               that two (or more) networks may NOT co-occur. Needed only for the rare
+               cross-branch clash that the hierarchy does not already imply -- the mutual
+               exclusion within a coexistence group, and its inheritance by descendants,
+               already covers the common cases. Absent from most files.
+
+               Part of the proposed heterogeneity extension.
+;
+   _category.id              pdbx_state_coexistence
+   _category.mandatory_code  no
+   #
+   _category_key.name  "_pdbx_state_coexistence.id"
+   #
+   loop_
+   _category_group.id
+     inclusive_group
+   #
+save_
+#
+save__pdbx_state_coexistence.id
+   _item_description.description
+;              Unique identifier of this exclusion rule.
+;
+   _item.name            "_pdbx_state_coexistence.id"
+   _item.category_id     pdbx_state_coexistence
+   _item.mandatory_code  yes
+   #
+   _item_type.code  int
+   #
+save_
+#
+save__pdbx_state_coexistence.rule
+   _item_description.description
+;              The kind of rule. Always NOT: the referenced networks may not co-occur in
+               the same physical state.
+;
+   _item.name            "_pdbx_state_coexistence.rule"
+   _item.category_id     pdbx_state_coexistence
+   _item.mandatory_code  yes
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_enumeration.value
+   _item_enumeration.detail
+     NOT  "the referenced networks may not co-occur"
+   #
+save_
+#
+save__pdbx_state_coexistence.heterogeneity_id
+   _item_description.description
+;              The first network of a forbidden combination. This data item is a pointer to
+               _pdbx_alt_groups.alt_group_id.
+;
+   _item.name            "_pdbx_state_coexistence.heterogeneity_id"
+   _item.category_id     pdbx_state_coexistence
+   _item.mandatory_code  yes
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_linked.child_name
+   _item_linked.parent_name
+     "_pdbx_state_coexistence.heterogeneity_id"  "_pdbx_alt_groups.alt_group_id"
+   #
+save_
+#
+save__pdbx_state_coexistence.heterogeneity_ids
+   _item_description.description
+;              The network (or networks) the first may not co-occur with. This data item is
+               a pointer to _pdbx_alt_groups.alt_group_id.
+;
+   _item.name            "_pdbx_state_coexistence.heterogeneity_ids"
+   _item.category_id     pdbx_state_coexistence
+   _item.mandatory_code  yes
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_linked.child_name
+   _item_linked.parent_name
+     "_pdbx_state_coexistence.heterogeneity_ids"  "_pdbx_alt_groups.alt_group_id"
+   #
+save_
+#

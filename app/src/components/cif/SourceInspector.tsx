@@ -3,13 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ParsedCif } from "@/lib/cif";
 import { flattenVisible } from "@/lib/cif-source/flatten";
-import {
-  buildFoldTree,
-  ensureChildren,
-  type FoldNode,
-  type HierarchyMode,
-  isPreamble,
-} from "@/lib/cif-source/fold-tree";
+import { buildFoldTree, ensureChildren, type FoldNode, isPreamble } from "@/lib/cif-source/fold-tree";
 import { deepestVisibleNodeAt, flattenOutline } from "@/lib/cif-source/outline";
 import { segmentDocument } from "@/lib/cif-source/segment";
 import {
@@ -31,7 +25,9 @@ import {
   buildResidueQuery,
   executeQuery,
 } from "@/lib/molstar/queries";
+import type { StructuralPick } from "@/lib/cif-source/joins";
 import { useStore } from "@/lib/store";
+import { useViewSettings } from "@/lib/view-settings";
 import { Color } from "molstar/lib/mol-util/color";
 import { type FilterEntry } from "./CategoryFilter";
 import { InspectorToolbar } from "./InspectorToolbar";
@@ -78,25 +74,33 @@ export default function SourceInspector({
   parsed,
   viewer,
   toolbarSlot,
+  viewerBarSlot,
   active,
   signature,
 }: {
   file: LoadedFile | null;
   parsed: ParsedCif | null;
   viewer: MolstarViewer | null;
-  toolbarSlot: HTMLElement | null; // the pane's full-width top bar; the view controls portal into it
+  toolbarSlot: HTMLElement | null; // the file-browser controls row (top of the left pane); controls portal here
+  viewerBarSlot: HTMLElement | null; // the floating bar over the 3D viewer; the "encodes X" chip portals here
   active: boolean; // only the active tab renders the (global) reference panel
-  signature?: ExampleSignature | null; // example's encoding category -> jump chip in the top bar
+  signature?: ExampleSignature | null; // example's encoding category -> jump chip over the 3D viewer
 }) {
   const setHoverDef = useStore((s) => s.setHoverDef);
   const scheduleClearHoverDef = useStore((s) => s.scheduleClearHoverDef);
   const openRefPanel = useStore((s) => s.openRefPanel);
-  const [mode, setMode] = useState<HierarchyMode>("auth");
+
+  // Global (cross-tab) display settings — driven by the NavBar ⚙ gear. Per-tab state (collapse set,
+  // filter, pin, outline expand) stays local below.
+  const mode = useViewSettings((s) => s.naming);
+  const hideNoise = useViewSettings((s) => s.hideNoise);
+  const collapsePreamble = useViewSettings((s) => s.hidePreamble);
+  const tableMode = useViewSettings((s) => s.tableMode);
+  const stickyHeader = useViewSettings((s) => s.stickyHeader);
+  const showOutline = useViewSettings((s) => s.showOutline);
+  const setActivePreambleCategories = useViewSettings((s) => s.setActivePreambleCategories);
+
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [hideNoise, setHideNoise] = useState(true);
-  const [collapsePreamble, setCollapsePreamble] = useState(true);
-  const [tableMode, setTableMode] = useState(true);
-  const [stickyHeader, setStickyHeader] = useState(true); // pin the current category header in table mode
   const [filter, setFilter] = useState<FilterEntry[]>([]);
 
   // Outline pane: its own expand state (separate from the source `collapsed`), the active
@@ -107,7 +111,6 @@ export default function SourceInspector({
   const [highlightRange, setHighlightRange] = useState<{ start: number; end: number } | null>(null);
   const [pinned, setPinned] = useState<PinnedTarget | null>(null);
   const [outlinePct, setOutlinePct] = useState(30);
-  const [showOutline, setShowOutline] = useState(false); // outline pane is opt-in (hidden by default)
   const sourceRef = useRef<SourceViewHandle>(null);
   const outlineRef = useRef<OutlinePaneHandle>(null);
   const innerSplitRef = useRef<HTMLDivElement>(null);
@@ -136,11 +139,12 @@ export default function SourceInspector({
   useEffect(() => {
     const collapsedSet = new Set<string>();
     const expandedSet = new Set<string>();
+    const hidePreamble = useViewSettings.getState().hidePreamble; // read current global flag (not a dep)
     if (tree) {
       for (const root of tree.roots) {
         expandedSet.add(root.id);
         if (root.category === "atom_site") collapsedSet.add(root.id);
-        if (collapsePreamble && isPreamble(root.category)) collapsedSet.add(root.id);
+        if (hidePreamble && isPreamble(root.category)) collapsedSet.add(root.id);
       }
     }
     setCollapsed(collapsedSet);
@@ -149,9 +153,26 @@ export default function SourceInspector({
     setPinned(null);
     viewer?.clearSelection();
     viewer?.removePersistentLabel("pin");
-    // collapsePreamble intentionally excluded: its toggle updates `collapsed` directly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tree]);
+
+  // Sync preamble collapse when the global "Hide preamble" flag flips (the gear owns the toggle now).
+  // Keyed on the flag only; tree (re)builds are handled by the effect above.
+  useEffect(() => {
+    setCollapsed((prev) => {
+      if (!tree) return prev;
+      const s = new Set(prev);
+      for (const n of tree.roots) if (isPreamble(n.category)) collapsePreamble ? s.add(n.id) : s.delete(n.id);
+      return s;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collapsePreamble]);
+
+  // Publish the active file's preamble categories so the gear's "Hide preamble" can list them.
+  useEffect(() => {
+    if (active) setActivePreambleCategories(preambleCategories);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, tree]);
 
   // Per-loop table model (cells sourced from Mol*'s parsed fields, row<->line mapping,
   // column widths). Only built in table mode.
@@ -395,16 +416,6 @@ export default function SourceInspector({
       return new Set();
     });
   }, [tree]);
-
-  const onTogglePreamble = useCallback(() => {
-    const next = !collapsePreamble;
-    setCollapsePreamble(next);
-    setCollapsed((prev) => {
-      const s = new Set(prev);
-      if (tree) for (const n of tree.roots) if (isPreamble(n.category)) (next ? s.add(n.id) : s.delete(n.id));
-      return s;
-    });
-  }, [collapsePreamble, tree]);
 
   // The full physical line span of the parsed field/record a line belongs to: a loop row's
   // (possibly wrapped / ;-multiline) lines, or a key-value item's declaration + multiline value.
@@ -838,6 +849,48 @@ export default function SourceInspector({
     });
   };
 
+  // atom_site is one physical line per row (direct offset), so map a row index to its source line.
+  const atomSiteLineFor = (block: number, row: number): number => {
+    if (!doc) return -1;
+    const si = doc.spans.findIndex((s) => s.category === "atom_site" && s.block === block);
+    const span = si >= 0 ? doc.spans[si] : null;
+    return span && span.kind === "loop" && span.dataStart >= 0 ? span.dataStart + row : -1;
+  };
+
+  // Reference panel -> click a resolved chain/residue/atom breadcrumb level: pin it in 3D (select +
+  // persistent label + focus + jump-back chip, via applyPin) AND scroll the source to a representative
+  // atom_site row. Reuses the same pin machinery as clicking a source row.
+  const onPickStructure = (p: StructuralPick) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query: any = null;
+    let label: string;
+    if (p.level === "chain") {
+      query = buildChainQuery(p.chain);
+      label = `chain ${p.chain}`;
+    } else if (p.level === "residue") {
+      const end = p.seqEnd != null && p.seqEnd !== p.seqStart ? p.seqEnd : undefined;
+      query = buildResidueQuery(p.chain, p.seqStart ?? 0, end);
+      label =
+        end != null
+          ? `res ${p.seqStart}–${p.seqEnd} (chain ${p.chain})`
+          : `${p.comp ? `${p.comp} ` : ""}${p.seqStart} (chain ${p.chain})`;
+    } else {
+      query = buildAtomQuery(p.chain, p.seqStart ?? 0, p.atom ?? "", p.alt);
+      label = `${p.comp ? `${p.comp} ` : ""}${p.seqStart} · ${p.atom} (${p.chain})${p.alt ? ` alt ${p.alt}` : ""}`;
+    }
+    const line = atomSiteLineFor(p.blockIndex, p.rowIndex);
+    applyPin({
+      id: `struct:${p.level}:${p.chain}:${p.seqStart ?? ""}:${p.atom ?? ""}:${p.alt ?? ""}`,
+      anchorLine: line >= 0 ? line : 0,
+      range: line >= 0 ? { start: line, end: line } : null,
+      headerId: null,
+      outlineId: null,
+      label,
+      query,
+    });
+    jumpToInstance(p.blockIndex, "atom_site", p.rowIndex);
+  };
+
   const viewOptions: ViewOptions = { hideNoise, collapsePreamble, tableMode, stickyHeader };
 
   return (
@@ -851,46 +904,19 @@ export default function SourceInspector({
           onJumpToInstance={jumpToInstance}
           onJumpToCategory={jumpToCategory}
           onJumpToItem={jumpToItem}
+          onPickStructure={onPickStructure}
         />
       )}
-      {/* The view controls live in the pane's full-width top bar (shared with the file controls);
-          portal them up so they keep direct access to this inspector's view + pin state. */}
+      {/* The file-browser controls (Table / Expand / Filter / pin / rows) portal into the row over the
+          left pane; they keep direct access to this inspector's view + pin state. */}
       {toolbarSlot &&
         isText &&
         doc &&
         tree &&
         createPortal(
-          <>
-            {signature && (
-              <button
-                onClick={() =>
-                  signature.field ? jumpToItem(signature.category, signature.field) : jumpToCategory(signature.category)
-                }
-                title={signature.note}
-                className="shrink-0 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-amber-800 hover:bg-amber-100"
-              >
-                encodes{" "}
-                <span className="font-mono">
-                  {signature.field ? `${signature.category}.${signature.field}` : signature.category}
-                </span>
-              </button>
-            )}
-            <InspectorToolbar
-              doc={doc}
+          <InspectorToolbar
+            doc={doc}
             rowCount={visibleShown.length}
-            mode={mode}
-            onModeChange={setMode}
-            hideNoise={hideNoise}
-            onToggleNoise={() => setHideNoise((v) => !v)}
-            collapsePreamble={collapsePreamble}
-            onTogglePreamble={onTogglePreamble}
-            preambleCategories={preambleCategories}
-            tableMode={tableMode}
-            onToggleTable={() => setTableMode((v) => !v)}
-            stickyHeader={stickyHeader}
-            onToggleSticky={() => setStickyHeader((v) => !v)}
-            outlineShown={showOutline}
-            onToggleOutline={() => setShowOutline((v) => !v)}
             allExpanded={collapsed.size === 0}
             onToggleExpandAll={onToggleExpandAll}
             filter={filter}
@@ -899,9 +925,30 @@ export default function SourceInspector({
             onPinJump={jumpToPinned}
             onPinClear={clearPin}
             onPinReferences={pinReferences}
-            />
-          </>,
+          />,
           toolbarSlot,
+        )}
+      {/* The amber "encodes X" chip is example-specific -> it floats over the 3D viewer (portaled into
+          the viewer control bar), while keeping this inspector's jump-to-source wiring. */}
+      {viewerBarSlot &&
+        signature &&
+        isText &&
+        doc &&
+        tree &&
+        createPortal(
+          <button
+            onClick={() =>
+              signature.field ? jumpToItem(signature.category, signature.field) : jumpToCategory(signature.category)
+            }
+            title={signature.note}
+            className="shrink-0 rounded border border-amber-300 bg-amber-50/90 px-2 py-0.5 text-[11px] text-amber-800 hover:bg-amber-100"
+          >
+            encodes{" "}
+            <span className="font-mono">
+              {signature.field ? `${signature.category}.${signature.field}` : signature.category}
+            </span>
+          </button>,
+          viewerBarSlot,
         )}
       {isText && doc && tree ? (
         <div ref={innerSplitRef} className="flex min-h-0 flex-1">

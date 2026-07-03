@@ -1,9 +1,13 @@
 "use client";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ParsedCif } from "@/lib/cif";
-import { computeInstanceJoins, type ReverseGroup } from "@/lib/cif-source/joins";
+import {
+  computeInstanceJoins,
+  type ReverseGroup,
+  type StructuralPick,
+  type StructuralRef,
+} from "@/lib/cif-source/joins";
 import { asMolCifFile, getCategory, type MolCifFile } from "@/lib/cif-source/types";
 import { type RefTarget, useStore } from "@/lib/store";
 import { lookupDefinition } from "./dict-lookup";
@@ -137,9 +141,24 @@ function Section({ title, count, children }: { title: string; count: number; chi
 }
 
 // A plain (non-tooltip) category pill for instance rows, where the hover affordance is the row
-// preview portal — not the dictionary definition.
-function CatPill({ cat }: { cat: string }) {
-  return <span className="shrink-0 rounded bg-indigo-50 px-1 font-mono text-[10px] text-indigo-700">{cat}</span>;
+// preview portal — not the dictionary definition. `colWidth` gives every pill in a section the same
+// width (widest category name) so the summary/value columns line up regardless of pill length.
+function CatPill({ cat, colWidth }: { cat: string; colWidth?: string }) {
+  return (
+    <span
+      style={colWidth ? { minWidth: colWidth } : undefined}
+      className="shrink-0 truncate rounded bg-indigo-50 px-1 font-mono text-[10px] text-indigo-700"
+    >
+      {cat}
+    </span>
+  );
+}
+
+// Shared pill width for a section: the longest category name in `cats`, in mono `ch` units (+ padding).
+function pillColWidth(cats: string[]): string | undefined {
+  if (cats.length === 0) return undefined;
+  const max = Math.max(...cats.map((c) => c.length));
+  return `${max + 1}ch`;
 }
 
 // The linking key, right-aligned: "via" sits outside the key's own bounding box.
@@ -214,6 +233,8 @@ function InstanceHitRow({
   via,
   targetField,
   summary,
+  count,
+  colWidth,
   onJump,
   onPreviewEnter,
   onPreviewLeave,
@@ -224,6 +245,8 @@ function InstanceHitRow({
   via: string;
   targetField: string;
   summary: string;
+  count?: number;
+  colWidth?: string;
   onJump?: (blockIndex: number, category: string, rowIndex: number) => void;
   onPreviewEnter: PreviewEnter;
   onPreviewLeave: () => void;
@@ -236,11 +259,65 @@ function InstanceHitRow({
       onMouseLeave={present ? onPreviewLeave : undefined}
       onClick={present ? () => onJump?.(blockIndex, category, rowIndex) : undefined}
     >
-      <CatPill cat={category} />
+      <CatPill cat={category} colWidth={colWidth} />
       <span className="min-w-0 flex-1 truncate text-[11px] text-slate-600" title={summary}>
         {summary}
       </span>
+      {count && count > 1 && (
+        <span className="shrink-0 rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-500">{count}</span>
+      )}
       {via && <ViaKey field={via} />}
+    </div>
+  );
+}
+
+// A resolved composite reference into atom_site, shown as a navigable hierarchy breadcrumb
+// (chain › residue › atom). Each segment highlights that granularity in 3D + scrolls the source; hover
+// previews the representative atom_site row.
+function StructuralRefRow({
+  sref,
+  blockIndex,
+  colWidth,
+  onPickStructure,
+  onPreviewEnter,
+  onPreviewLeave,
+}: {
+  sref: StructuralRef;
+  blockIndex: number;
+  colWidth?: string;
+  onPickStructure?: (pick: StructuralPick) => void;
+  onPreviewEnter: PreviewEnter;
+  onPreviewLeave: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 rounded px-1 hover:bg-slate-50">
+      <CatPill cat={sref.targetCategory} colWidth={colWidth} />
+      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-0.5 gap-y-0.5 text-[11px]">
+        {sref.levels.map((lv, i) => (
+          <Fragment key={i}>
+            {i > 0 && <span className="text-slate-300">›</span>}
+            <button
+              onMouseEnter={(e) => onPreviewEnter(blockIndex, sref.targetCategory, lv.sampleRowIndex, undefined, e)}
+              onMouseLeave={onPreviewLeave}
+              onClick={() => onPickStructure?.({ ...lv, blockIndex, rowIndex: lv.sampleRowIndex })}
+              title={`highlight ${lv.label} in 3D and scroll to it in the source`}
+              className="rounded px-1 text-slate-600 hover:bg-indigo-100 hover:text-indigo-700"
+            >
+              {lv.label}
+            </button>
+          </Fragment>
+        ))}
+      </span>
+      {sref.count > 1 && (
+        <span className="shrink-0 rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-500" title={`${sref.count} atoms`}>
+          {sref.count}
+        </span>
+      )}
+      {sref.via && (
+        <span className="max-w-[130px] shrink-0 truncate font-mono text-[9px] text-slate-400" title={`via ${sref.via}`}>
+          via {sref.via}
+        </span>
+      )}
     </div>
   );
 }
@@ -250,12 +327,14 @@ function InstanceHitRow({
 function InstanceGroupRow({
   group,
   blockIndex,
+  colWidth,
   onJump,
   onPreviewEnter,
   onPreviewLeave,
 }: {
   group: ReverseGroup;
   blockIndex: number;
+  colWidth?: string;
   onJump?: (blockIndex: number, category: string, rowIndex: number) => void;
   onPreviewEnter: PreviewEnter;
   onPreviewLeave: () => void;
@@ -267,7 +346,7 @@ function InstanceGroupRow({
       onMouseLeave={onPreviewLeave}
       onClick={() => onJump?.(blockIndex, group.category, group.sampleRowIndex)}
     >
-      <CatPill cat={group.category} />
+      <CatPill cat={group.category} colWidth={colWidth} />
       <span className="shrink-0 rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-500">
         {group.count}
       </span>
@@ -285,21 +364,20 @@ export function ReferencePanel({
   onJumpToInstance,
   onJumpToCategory,
   onJumpToItem,
+  onPickStructure,
 }: {
   parsed: ParsedCif | null;
   presentCategories: Set<string>;
   onJumpToInstance?: (blockIndex: number, category: string, rowIndex: number) => void;
   onJumpToCategory: (category: string, blockIndex?: number) => void;
   onJumpToItem: (category: string, field: string, blockIndex?: number) => void;
+  onPickStructure?: (pick: StructuralPick) => void; // click a resolved chain/residue/atom breadcrumb level
 }) {
   const refPanel = useStore((s) => s.refPanel);
   const dict = useStore((s) => s.dict);
   const adj = useStore((s) => s.adj);
   const itemChildren = useStore((s) => s.itemChildren);
   const closeRefPanel = useStore((s) => s.closeRefPanel);
-  const focus = useStore((s) => s.focus);
-  const expand = useStore((s) => s.expand);
-  const router = useRouter();
   const panelRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -420,15 +498,14 @@ export function ReferencePanel({
         .filter((h) => !onlyPresent || h.rowIndex >= 0)
         .sort((a, b) => Number(b.rowIndex >= 0) - Number(a.rowIndex >= 0))
     : [];
+  const structural = joins?.forwardStructural ?? [];
   const revGroups = joins?.reverse ?? [];
 
-  const linkCount = instance ? fwdHits.length + revGroups.length : fwd.length + rev.length;
+  // Shared category-pill widths so the summary/value columns line up within each section.
+  const fwdColWidth = pillColWidth([...structural.map((s) => s.targetCategory), ...fwdHits.map((h) => h.category)]);
+  const revColWidth = pillColWidth(revGroups.map((g) => g.category));
 
-  const openInGraph = () => {
-    focus(target.cat); // both category and item targets carry `.cat`
-    expand(target.cat);
-    router.push("/dictionary");
-  };
+  const linkCount = instance ? structural.length + fwdHits.length + revGroups.length : fwd.length + rev.length;
 
   return (
     <>
@@ -498,7 +575,18 @@ export function ReferencePanel({
         <div className="no-scrollbar flex-1 overflow-auto p-1.5">
           {instance && joins ? (
             <>
-              <Section title="this record references →" count={fwdHits.length}>
+              <Section title="this record references →" count={structural.length + fwdHits.length}>
+                {structural.map((s, i) => (
+                  <StructuralRefRow
+                    key={`is${i}`}
+                    sref={s}
+                    blockIndex={instance.blockIndex}
+                    colWidth={fwdColWidth}
+                    onPickStructure={onPickStructure}
+                    onPreviewEnter={onPreviewEnter}
+                    onPreviewLeave={onPreviewLeave}
+                  />
+                ))}
                 {fwdHits.map((h, i) => (
                   <InstanceHitRow
                     key={`if${i}`}
@@ -508,6 +596,8 @@ export function ReferencePanel({
                     via={h.via}
                     targetField={h.targetField}
                     summary={h.summary}
+                    count={h.count}
+                    colWidth={fwdColWidth}
                     onJump={onJumpToInstance}
                     onPreviewEnter={onPreviewEnter}
                     onPreviewLeave={onPreviewLeave}
@@ -520,6 +610,7 @@ export function ReferencePanel({
                     key={`ig${i}`}
                     group={g}
                     blockIndex={instance.blockIndex}
+                    colWidth={revColWidth}
                     onJump={onJumpToInstance}
                     onPreviewEnter={onPreviewEnter}
                     onPreviewLeave={onPreviewLeave}
@@ -563,18 +654,11 @@ export function ReferencePanel({
         </div>
 
         {/* footer */}
-        <div className="flex shrink-0 items-center justify-between border-t border-slate-100 px-2.5 py-1.5">
+        <div className="flex shrink-0 items-center border-t border-slate-100 px-2.5 py-1.5">
           <span className="font-mono text-[10px] text-slate-400">
             {linkCount} {instance ? "ref" : "link"}
             {linkCount === 1 ? "" : "s"}
           </span>
-          <button
-            onClick={openInGraph}
-            className="rounded px-1.5 py-0.5 text-[11px] text-indigo-600 hover:bg-indigo-50"
-            title="open this category in the full dictionary graph"
-          >
-            Open in full graph →
-          </button>
         </div>
       </div>
 

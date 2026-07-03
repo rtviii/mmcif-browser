@@ -2,7 +2,7 @@ import MiniSearch from "minisearch";
 import { create } from "zustand";
 import type { HoverTarget } from "@/components/cif/dict-lookup";
 import { loadData } from "./data";
-import type { Dictionary, GraphData, GraphEdge, GraphNode } from "./types";
+import type { DictVariant, Dictionary, GraphData, GraphEdge, GraphNode } from "./types";
 
 export interface SearchHit {
   id: string;
@@ -40,6 +40,7 @@ interface State {
   adj: Adjacency;
   itemChildren: Map<string, string[]>; // parent item -> child items[] (inverse of Item.parents)
   search: MiniSearch | null;
+  variant: DictVariant; // which dictionary is loaded (base vs base + heterogeneity extension)
 
   visible: string[]; // category ids currently on the canvas
   selected: string | null; // selected category id
@@ -63,6 +64,7 @@ interface State {
   setRefTarget: (target: RefTarget) => void; // re-center the open panel without closing it
 
   init: () => Promise<void>;
+  setVariant: (variant: DictVariant) => Promise<void>; // swap dictionary at runtime (reloads schema)
   show: (id: string) => void;
   hide: (id: string) => void;
   expand: (id: string) => void; // add a category's in+out neighbours
@@ -99,6 +101,31 @@ function buildItemChildren(dict: Dictionary): Map<string, string[]> {
   return m;
 }
 
+// Fetch a dictionary variant's artifacts and build the derived indices (node lookup, FK adjacency,
+// inverse parent map, search). Shared by init() and setVariant().
+async function fetchAndIndex(variant: DictVariant) {
+  const { dict, graph } = await loadData(variant);
+  const nodeIndex = new Map(graph.nodes.map((n) => [n.id, n]));
+  const adj = buildAdjacency(graph);
+  const itemChildren = buildItemChildren(dict);
+
+  const search = new MiniSearch<SearchHit>({
+    fields: ["label", "description"],
+    storeFields: ["id", "kind", "category", "label", "description"],
+    searchOptions: { boost: { label: 3 }, prefix: true, fuzzy: 0.2 },
+  });
+  const docs: SearchHit[] = [];
+  for (const c of Object.values(dict.categories)) {
+    docs.push({ id: c.name, kind: "category", category: c.name, label: c.name, description: c.description });
+  }
+  for (const it of Object.values(dict.items)) {
+    docs.push({ id: it.name, kind: "item", category: it.category, label: it.name, description: it.description });
+  }
+  search.addAll(docs);
+
+  return { dict, graph, nodeIndex, adj, itemChildren, search };
+}
+
 // Transient timer for the hover-tooltip grace period — kept out of state so it never re-renders.
 let hoverClearTimer: ReturnType<typeof setTimeout> | null = null;
 const HOVER_CLEAR_GRACE_MS = 180;
@@ -111,6 +138,7 @@ export const useStore = create<State>((set, get) => ({
   adj: { out: new Map(), in: new Map() },
   itemChildren: new Map(),
   search: null,
+  variant: "base",
   visible: [],
   selected: null,
   hovered: null,
@@ -154,30 +182,22 @@ export const useStore = create<State>((set, get) => ({
 
   init: async () => {
     if (get().loaded) return;
-    const { dict, graph } = await loadData();
-    const nodeIndex = new Map(graph.nodes.map((n) => [n.id, n]));
-    const adj = buildAdjacency(graph);
-    const itemChildren = buildItemChildren(dict);
-
-    const search = new MiniSearch<SearchHit>({
-      fields: ["label", "description"],
-      storeFields: ["id", "kind", "category", "label", "description"],
-      searchOptions: { boost: { label: 3 }, prefix: true, fuzzy: 0.2 },
-    });
-    const docs: SearchHit[] = [];
-    for (const c of Object.values(dict.categories)) {
-      docs.push({ id: c.name, kind: "category", category: c.name, label: c.name, description: c.description });
-    }
-    for (const it of Object.values(dict.items)) {
-      docs.push({ id: it.name, kind: "item", category: it.category, label: it.name, description: it.description });
-    }
-    search.addAll(docs);
-
-    set({ loaded: true, dict, graph, nodeIndex, adj, itemChildren, search });
+    const idx = await fetchAndIndex(get().variant);
+    set({ loaded: true, ...idx });
     // seed with a useful starter: atom_site + the categories it references (out-links only,
     // ~13 — compact). Full in+out expansion stays an explicit user action.
     get().focus("atom_site");
     get().expandOut("atom_site");
+  },
+
+  // Swap the active dictionary at runtime. Re-fetches the variant's artifacts and rebuilds every
+  // derived index; loaded structures are untouched (only schema annotations change), so the
+  // inspector/reference-panel/graph re-render against the new dictionary. The graph canvas is left
+  // as-is — base category ids stay valid; the het variant only adds three categories to expand into.
+  setVariant: async (variant) => {
+    if (get().loaded && get().variant === variant) return;
+    const idx = await fetchAndIndex(variant);
+    set({ loaded: true, variant, ...idx });
   },
 
   neighbors: (id) => {

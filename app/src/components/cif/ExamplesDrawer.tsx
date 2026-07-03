@@ -2,9 +2,10 @@
 import { useEffect, useRef, useState } from "react";
 import { EXAMPLE_GROUPS, type StructureExample } from "@/lib/molstar/examples";
 
-// A small dropdown "drawer" in the inspector top bar: a curated list of structures that each
-// demonstrate one kind of heterogeneity (B-factors, ANISOU ellipsoids, multi-model ensembles, TLS).
-// Picking one hands the example up to the tab, which fetches it from RCSB and renders it with the
+// A small dropdown "drawer" in the NavBar, next to the DICT switcher (shown only under the het
+// dictionary): a curated list of structures that each demonstrate one kind of heterogeneity
+// (B-factors, ANISOU ellipsoids, multi-model ensembles, TLS, the proposed extension). Picking one is
+// handed to the active tab, which fetches it from RCSB (or a bundled file) and renders it with the
 // representation/colour theme baked into the example.
 export default function ExamplesDrawer({ onPick }: { onPick: (ex: StructureExample) => void }) {
   const [open, setOpen] = useState(false);
@@ -28,8 +29,11 @@ export default function ExamplesDrawer({ onPick }: { onPick: (ex: StructureExamp
     <div ref={ref} className="relative shrink-0">
       <button
         onClick={() => setOpen((o) => !o)}
-        className={`rounded border px-2 py-0.5 ${
-          open ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+        title="curated heterogeneity demo structures"
+        className={`rounded border px-1.5 py-0.5 text-[11px] ${
+          open
+            ? "border-indigo-500 bg-indigo-600 text-white"
+            : "border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-600 hover:text-neutral-100"
         }`}
       >
         Examples ▾
@@ -42,7 +46,7 @@ export default function ExamplesDrawer({ onPick }: { onPick: (ex: StructureExamp
               {g.note && <div className="px-3 pb-1 text-[10px] leading-tight text-slate-400">{g.note}</div>}
               {g.items.map((ex) => (
                 <button
-                  key={ex.pdbId}
+                  key={ex.id ?? ex.pdbId}
                   onClick={() => {
                     onPick(ex);
                     setOpen(false);

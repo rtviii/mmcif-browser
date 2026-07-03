@@ -17,13 +17,20 @@ import {
   StructureSelectionFromExpression,
   TransformStructureConformation,
 } from "molstar/lib/mol-plugin-state/transforms/model";
+import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/state";
 import { PluginCommands } from "molstar/lib/mol-plugin/commands";
 import { StateSelection } from "molstar/lib/mol-state";
 import { Color } from "molstar/lib/mol-util/color";
 import type { ColorTheme } from "molstar/lib/mol-theme/color";
 import { AltLocColorThemeProvider } from "./altloc-theme";
 import { LabelManager } from "./labels";
-import { buildTlsGroupExpression } from "./queries";
+import {
+  type AltGroupSelector,
+  buildAltGroupExpression,
+  buildHetBaseExpression,
+  buildTlsGroupExpression,
+  structureToLoci,
+} from "./queries";
 import { setSelectionWiggleFalloff } from "./wiggle-falloff";
 import { viewerSpec } from "./spec";
 import {
@@ -43,6 +50,18 @@ interface TlsRef {
   origin: Vec3;
   amp: number;
 }
+
+// One heterogeneity network prepared for rendering: a colour and the membership selectors that pick
+// its atoms. Built by the inspector from the parsed het model; the viewer turns each into its own
+// coloured, independently toggleable sub-structure.
+export interface HetVizNetwork {
+  id: string;
+  color: number;
+  selectors: AltGroupSelector[];
+}
+
+// The constant "base" part is drawn grey (matches the alt-loc theme's "no alt" colour).
+const HET_BASE_COLOR = 0xcfd8dc;
 
 export interface PickInfo {
   chainId: string;
@@ -67,6 +86,9 @@ export class MolstarViewer {
   // TLS libration: one transformable sub-structure per rigid body, plus the running animation handle.
   private tlsRefs: TlsRef[] = [];
   private tlsRaf: number | null = null;
+  // Heterogeneity networks: networkId -> the sub-structure selection ref (one coloured component per
+  // network), used to toggle per-network visibility (the state stepper) and to highlight/focus them.
+  private hetRefs: Map<string, string> = new Map();
 
   async init(container: HTMLElement, spec: PluginUISpec = viewerSpec): Promise<void> {
     if (this.ctx) return;
@@ -111,7 +133,7 @@ export class MolstarViewer {
 
   async load(
     data: string | Uint8Array,
-    opts: { label?: string; view?: StructureView; tlsGroups?: TlsGroup[] } = {},
+    opts: { label?: string; view?: StructureView; tlsGroups?: TlsGroup[]; het?: HetVizNetwork[] } = {},
   ): Promise<void> {
     if (!this.ctx) throw new Error("Viewer not initialized");
     const raw = await this.ctx.builders.data.rawData({
@@ -121,7 +143,8 @@ export class MolstarViewer {
     if (!this.ctx) throw new Error("Viewer disposed during load");
     const trajectory = await this.ctx.builders.structure.parseTrajectory(raw, "mmcif");
     if (!this.ctx) throw new Error("Viewer disposed during load");
-    if (opts.tlsGroups && opts.tlsGroups.length) await this.buildTls(trajectory, opts.tlsGroups);
+    if (opts.het && opts.het.length) await this.buildHeterogeneity(trajectory, opts.het);
+    else if (opts.tlsGroups && opts.tlsGroups.length) await this.buildTls(trajectory, opts.tlsGroups);
     else await this.buildRepresentation(trajectory, opts.view ?? DEFAULT_VIEW);
   }
 
@@ -266,6 +289,94 @@ export class MolstarViewer {
     return this.tlsRaf !== null;
   }
 
+  // --- heterogeneity networks (proposed extension) ---
+
+  // Render the constant "base" part grey, then one coloured sub-structure per network (so each can be
+  // shown/hidden independently for the state stepper, and highlighted/focused on its own). Called
+  // instead of buildRepresentation when network membership is supplied.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async buildHeterogeneity(trajectory: any, networks: HetVizNetwork[]): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    this.modelCount = trajectory?.data?.frameCount ?? 1;
+    const model = await ctx.builders.structure.createModel(trajectory);
+    if (!this.ctx) return;
+    this.modelRef = model.ref;
+    const structure = await ctx.builders.structure.createStructure(model);
+    if (!this.ctx) return;
+    this.hetRefs = new Map();
+
+    // base / constant scaffold: every atom not claimed by a network (empty in files that list only
+    // the alternate atoms). Always visible, grey.
+    const allSelectors = networks.flatMap((n) => n.selectors);
+    {
+      const b = ctx.state.data.build().to(structure.ref);
+      const sel = b.apply(StructureSelectionFromExpression, {
+        expression: buildHetBaseExpression(allSelectors),
+        label: "base",
+      });
+      await b.commit();
+      if (!this.ctx) return;
+      await ctx.builders.structure.representation.addRepresentation(sel.ref, {
+        type: "ball-and-stick",
+        typeParams: { ignoreLight: true },
+        color: "uniform",
+        colorParams: { value: Color(HET_BASE_COLOR) },
+      });
+    }
+
+    // one coloured, independently toggleable sub-structure per network.
+    for (const net of networks) {
+      const b = ctx.state.data.build().to(structure.ref);
+      const sel = b.apply(StructureSelectionFromExpression, {
+        expression: buildAltGroupExpression(net.selectors),
+        label: `network ${net.id}`,
+      });
+      await b.commit();
+      if (!this.ctx) return;
+      await ctx.builders.structure.representation.addRepresentation(sel.ref, {
+        type: "ball-and-stick",
+        typeParams: { ignoreLight: true },
+        color: "uniform",
+        colorParams: { value: Color(net.color) },
+      });
+      this.hetRefs.set(net.id, sel.ref);
+    }
+  }
+
+  hasHet(): boolean {
+    return this.hetRefs.size > 0;
+  }
+
+  // Show exactly the given networks (plus the always-visible base); hide the rest. Drives the state
+  // stepper — a state is base + its chosen networks.
+  setVisibleNetworks(ids: Set<string>): void {
+    if (!this.ctx) return;
+    const state = this.ctx.state.data;
+    for (const [id, ref] of this.hetRefs) setSubtreeVisibility(state, ref, !ids.has(id));
+  }
+
+  showAllNetworks(): void {
+    this.setVisibleNetworks(new Set(this.hetRefs.keys()));
+  }
+
+  private hetLoci(id: string): StructureElement.Loci | null {
+    const ref = this.hetRefs.get(id);
+    if (!ref) return null;
+    const struct = this.getStructureFromRef(ref);
+    if (!struct || struct.elementCount === 0) return null;
+    return structureToLoci(struct);
+  }
+
+  highlightNetwork(id: string | null): void {
+    this.highlightLoci(id ? this.hetLoci(id) : null);
+  }
+
+  focusNetwork(id: string): void {
+    const loci = this.hetLoci(id);
+    if (loci) this.focusLoci(loci);
+  }
+
   // --- B-factor / selection "wiggle" (Mol*'s shader thermal animation) ---
   //
   // Unlike a per-atom random displacement (which tears bonds apart), Mol*'s wiggle samples one smooth
@@ -330,6 +441,7 @@ export class MolstarViewer {
   async clear(): Promise<void> {
     this.stopTlsAnimation(false);
     this.tlsRefs = [];
+    this.hetRefs = new Map();
     this.modelRef = null;
     this.modelCount = 1;
     if (!this.ctx) return;
@@ -471,6 +583,7 @@ export class MolstarViewer {
   dispose(): void {
     this.stopTlsAnimation(false);
     this.tlsRefs = [];
+    this.hetRefs = new Map();
     this.labelManager?.dispose();
     this.labelManager = null;
     this.ctx?.dispose();

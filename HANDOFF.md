@@ -19,10 +19,12 @@ was the shell's working directory. **Do not modify sampleworks.**
 cd ~/dev/mmcif-browser/app && npm run dev     # http://localhost:3000
 npx tsc --noEmit                              # typecheck (run from app/)
 ```
-Regenerate dictionary artifacts (only if the pinned `.dic` changes):
+Regenerate dictionary artifacts (only if a pinned `.dic` changes):
 ```bash
 cd ~/dev/mmcif-browser && pipeline/.venv/bin/python pipeline/build_artifacts.py
 ```
+This now builds BOTH variants: base (`dictionary.json`/`graph.json`) and het = base +
+`mmcif_pdbx_v50_het_ext.dic` (`dictionary.het.json`/`graph.het.json`). All four are committed artifacts.
 
 ### Preview / browser-driving gotchas (important — cost time)
 - The Claude preview MCP roots at the session's PRIMARY dir. When that's `mmcif-browser`, the existing
@@ -41,6 +43,34 @@ cd ~/dev/mmcif-browser && pipeline/.venv/bin/python pipeline/build_artifacts.py
   Event('scroll', {bubbles:true}))`), or drive it through the component's own `scrollToIndex`. Also: virtual
   rows are absolutely positioned, so `querySelectorAll` DOM order ≠ visual order, and `getBoundingClientRect`
   can flakily read 0 mid-reflow. Verify these panes by SCREENSHOT, not by reading element positions.
+
+## Latest batch — heterogeneity extension (2026-06-30, branch `reconciliation_memo`, UNCOMMITTED)
+
+The current in-flight work. Visualizes the three proposed correlated-alternate categories from the
+reconciliation memo (`~/dev/rtviii.github.io/posts/heterogeneity-proposal/_reconciliation-memo.md`):
+`_pdbx_alt_groups`, `_pdbx_heterogeneity_hierarchy`, `_pdbx_state_coexistence`. Full detail in ROADMAP
+"Heterogeneity extension". Typecheck clean; pipeline + Mol* parse + state enumeration verified in node;
+in-browser pass left to the user (the four checks below). The one mental model to hold: TWO orthogonal
+"dictionaries" — the SCHEMA (annotation: tooltips/FK graph/reference panel, swapped by the version dropdown)
+vs the loaded FILE (content the inspector/3D draw). New categories appear in 3D only if the file carries them.
+
+Try it: Examples ▾ → "Heterogeneity networks" → load a case. Then (1) toggle the top-bar dict dropdown
+base ↔ het and watch `_pdbx_alt_groups` go unknown → linked in the reference panel; (2) "color by network";
+(3) the state stepper ‹ N/M ›; (4) "relationships" panel (hierarchy + occupancy sums + the case-D exclusion +
+clickable legal states). Case C should give apo / bound+lig_a / bound+lig_b and never a ligand with apo.
+
+Gotchas specific to this batch:
+- **DDL2 linkage**: an extension category's FK edge appears iff `_item_linked.child_name/parent_name` is
+  declared in the CHILD item's save frame (verified against py-mmcif `getFullParentList`). Don't try to merge
+  into the base dict's parent frames. `alt_group_id` is the network id but NOT the row key (`id` is) — pointing
+  children at a non-key parent is fine for edge-drawing; py-mmcif records it.
+- **Brief double-load**: a het file loads once normally then reloads with network colouring once OUR parse
+  finishes (Mol* parses the CIF itself, independent of our `parseHeterogeneity`). Harmless on these tiny files;
+  if it ever matters, gate the viewer load on the parse.
+- **`exceptBy` base is empty** for the demo files (they list only alternate atoms; base is implicit). That path
+  is untested in WebGL — exercise it when you annotate a REAL entry with a constant scaffold.
+- Demo CIFs live in `app/public/examples/het/`. A stray duplicate `reconciliation_memo/network_demo.cif` sits
+  at the repo root (untracked) — the canonical copies are under `app/public/examples/het/`.
 
 ## Current state (done)
 
@@ -145,10 +175,14 @@ sample. (Toolbar crowding at narrow splits is now FIXED.)
 
 - `~/dev/fend_tubulinxyz` is the user's tubulin viewer and the SOURCE of our Mol* patterns; it's
   pre-indexed in Deepwiki. Use Deepwiki for its molstar styling/representation specifics.
-- Git: `main` now carries the former `inspector-file-viewer` work (tip `17591d6`: Phase 4/5/6 + the split
-  outline pane rework). This session's controls/pin/labels batch is UNCOMMITTED on branch
-  `inspector-controls-pin-labels` (off `main`) — new files `cif/MmcifChip.tsx`, `cif/GlobalHoverTooltip.tsx`,
-  `cif/ViewMenu.tsx`, `lib/molstar/labels.ts`; edits to `store.ts`, `app/layout.tsx`, `SourceInspector.tsx`,
-  `SourceView.tsx`, `CategoryFilter.tsx`, `OutlinePane.tsx`, `viewer.ts`. The user signs commits — if signing
-  fails ("Couldn't find key in agent"), `ssh-add ~/.ssh/rtviii` first (the ed25519 key matching
-  `user.signingkey`). `.claude/launch.json` has `autoPort: true` (port 3000 was occupied during dev).
+- Git: the inspector batches through the references-as-navigation / label / b-factor-and-tls work are now
+  COMMITTED on branch `reconciliation_memo` (tip `1d61c4f`). The heterogeneity-extension batch is UNCOMMITTED
+  on top of it — new files `pipeline/data/mmcif_pdbx_v50_het_ext.dic`, `app/public/data/{dictionary,graph}.het.json`,
+  `app/public/examples/het/*.cif`, `app/src/lib/molstar/het.ts`, `app/src/components/cif/HeterogeneityPanel.tsx`;
+  edits to `pipeline/build_artifacts.py`, `lib/{data,store,types}.ts`, `lib/molstar/{viewer,queries,examples}.ts`,
+  `lib/cif-source/classify.ts`, `components/{NavBar,StructureTab,MolstarViewer}.tsx`, `components/cif/ExamplesDrawer.tsx`,
+  and the base `app/public/data/{dictionary,graph}.json` (re-emitted with the new `meta.variant`/`label` fields).
+  Untracked-but-not-part-of-the-batch: `mmcif_extensions.md` (the original prompt notes) and
+  `reconciliation_memo/network_demo.cif` (a stray duplicate of the canonical demo under `app/public/examples/het/`).
+  The user signs commits — if signing fails ("Couldn't find key in agent"), `ssh-add ~/.ssh/rtviii` first (the
+  ed25519 key matching `user.signingkey`). `.claude/launch.json` has `autoPort: true` (port 3000 was occupied during dev).

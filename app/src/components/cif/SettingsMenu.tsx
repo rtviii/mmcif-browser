@@ -1,33 +1,26 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { HierarchyMode } from "@/lib/cif-source/fold-tree";
+import { useViewSettings } from "@/lib/view-settings";
 import { MmcifChip } from "./MmcifChip";
 
-// The consolidated "View" menu: the naming convention + the two "hide" filters that used to sit
-// flat in the top bar, each with a plain-English explanation of what it actually does. The
-// preamble filter additionally lists the exact categories it will collapse (as hoverable chips),
-// so "preamble" stops being a mystery word. Opens on hover (with a grace delay) or click.
-export function ViewMenu({
-  mode,
-  onModeChange,
-  collapsePreamble,
-  onTogglePreamble,
-  hideNoise,
-  onToggleNoise,
-  stickyHeader,
-  onToggleSticky,
-  preambleCategories,
-}: {
-  mode: HierarchyMode;
-  onModeChange: (m: HierarchyMode) => void;
-  collapsePreamble: boolean;
-  onTogglePreamble: () => void;
-  hideNoise: boolean;
-  onToggleNoise: () => void;
-  stickyHeader: boolean;
-  onToggleSticky: () => void;
-  preambleCategories: string[];
-}) {
+// The global display-settings gear (⚙), placed before "mmCIF" in the NavBar. It drives the shared
+// view-settings store, so the naming convention, the two "hide" filters, the sticky header, and the
+// outline pane apply across every structure tab. The preamble section lists exactly the categories it
+// collapses in the file you're currently looking at (published by the active tab). Opens on hover
+// (grace delay) or click. Visual patterns mirror the retired inline ViewMenu.
+export function SettingsMenu() {
+  const naming = useViewSettings((s) => s.naming);
+  const setNaming = useViewSettings((s) => s.setNaming);
+  const hidePreamble = useViewSettings((s) => s.hidePreamble);
+  const toggleHidePreamble = useViewSettings((s) => s.toggleHidePreamble);
+  const hideNoise = useViewSettings((s) => s.hideNoise);
+  const toggleHideNoise = useViewSettings((s) => s.toggleHideNoise);
+  const stickyHeader = useViewSettings((s) => s.stickyHeader);
+  const toggleStickyHeader = useViewSettings((s) => s.toggleStickyHeader);
+  const showOutline = useViewSettings((s) => s.showOutline);
+  const toggleShowOutline = useViewSettings((s) => s.toggleShowOutline);
+  const preambleCategories = useViewSettings((s) => s.activePreambleCategories);
+
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<number | null>(null);
@@ -57,8 +50,6 @@ export function ViewMenu({
     };
   }, [open]);
 
-  const activeHides = (collapsePreamble ? 1 : 0) + (hideNoise ? 1 : 0);
-
   return (
     <div
       ref={ref}
@@ -71,30 +62,25 @@ export function ViewMenu({
     >
       <button
         onClick={() => setOpen((v) => !v)}
-        className={`flex shrink-0 items-center gap-1 whitespace-nowrap rounded border px-2 py-0.5 ${
-          open || activeHides
-            ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-            : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+        title="display settings"
+        className={`flex items-center rounded px-1 py-0.5 text-sm leading-none ${
+          open ? "text-neutral-100" : "text-neutral-400 hover:text-neutral-100"
         }`}
       >
-        View
-        {activeHides > 0 && (
-          <span className="rounded-full bg-indigo-600 px-1 text-[9px] leading-tight text-white">{activeHides}</span>
-        )}
-        <span className="text-[8px] text-slate-400">▼</span>
+        ⚙
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-[340px] rounded border border-slate-200 bg-white p-3 text-[11px] shadow-lg">
+        <div className="absolute left-0 top-full z-50 mt-1 w-[340px] rounded border border-slate-200 bg-white p-3 text-[11px] text-slate-700 shadow-xl">
           {/* Naming convention */}
           <div className="mb-1 text-[9px] font-semibold uppercase tracking-wide text-slate-400">Naming</div>
           <div className="flex overflow-hidden rounded border border-slate-300">
             {(["auth", "label"] as const).map((m) => (
               <button
                 key={m}
-                onClick={() => onModeChange(m)}
+                onClick={() => setNaming(m)}
                 className={`flex-1 px-2 py-0.5 font-mono ${
-                  mode === m ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
+                  naming === m ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
                 }`}
               >
                 {m}_*
@@ -108,16 +94,24 @@ export function ViewMenu({
 
           <div className="my-2.5 border-t border-slate-100" />
 
+          {/* Show outline */}
+          <MenuToggle on={showOutline} onToggle={toggleShowOutline} label="Outline pane" />
+          <p className="mt-1 leading-snug text-slate-500">
+            Show the collapsible category / chain / residue outline beside the source.
+          </p>
+
+          <div className="my-2.5 border-t border-slate-100" />
+
           {/* Hide preamble */}
-          <MenuToggle on={collapsePreamble} onToggle={onTogglePreamble} label="Hide preamble" />
+          <MenuToggle on={hidePreamble} onToggle={toggleHidePreamble} label="Hide preamble" />
           <p className="mt-1 leading-snug text-slate-500">
             Collapse the method &amp; deposition header categories — refinement, diffraction, experimental and
             citation paperwork that precedes the structure.
           </p>
-          {collapsePreamble && (
+          {hidePreamble && (
             <div className="mt-1.5">
               {preambleCategories.length ? (
-                <div className="flex max-h-28 flex-wrap gap-1 overflow-auto no-scrollbar">
+                <div className="no-scrollbar flex max-h-28 flex-wrap gap-1 overflow-auto">
                   {preambleCategories.map((c) => (
                     <MmcifChip key={c} target={{ kind: "category", cat: c }} variant="chip" />
                   ))}
@@ -131,7 +125,7 @@ export function ViewMenu({
           <div className="my-2.5 border-t border-slate-100" />
 
           {/* Hide noise */}
-          <MenuToggle on={hideNoise} onToggle={onToggleNoise} label="Hide noise" />
+          <MenuToggle on={hideNoise} onToggle={toggleHideNoise} label="Hide noise" />
           <p className="mt-1 leading-snug text-slate-500">
             Drop blank lines and <span className="font-mono text-slate-600">#</span> comment lines so only data rows
             remain.
@@ -140,7 +134,7 @@ export function ViewMenu({
           <div className="my-2.5 border-t border-slate-100" />
 
           {/* Sticky header */}
-          <MenuToggle on={stickyHeader} onToggle={onToggleSticky} label="Sticky header" />
+          <MenuToggle on={stickyHeader} onToggle={toggleStickyHeader} label="Sticky header" />
           <p className="mt-1 leading-snug text-slate-500">
             Keep the current category name (and its column headers, in table mode) pinned at the top while you scroll
             through a long block.

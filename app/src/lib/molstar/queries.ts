@@ -65,6 +65,45 @@ export const buildTlsGroupExpression = (chain: string, ranges: { beg: number; en
   });
 };
 
+// A heterogeneity-network membership selector (one _pdbx_alt_groups row): chain + residue range +
+// altloc, optionally a single atom name. Structurally matches het.ts's AltSelector.
+export interface AltGroupSelector {
+  chain: string;
+  seqStart: number;
+  seqEnd: number;
+  altId: string;
+  atomId: string | null;
+}
+
+const altGroupAtomGroups = (s: AltGroupSelector) => {
+  const altTest = MS.core.rel.eq([MS.ammp("label_alt_id"), s.altId]);
+  return MS.struct.generator.atomGroups({
+    "chain-test": MS.core.rel.eq([MS.ammp("auth_asym_id"), s.chain]),
+    "residue-test":
+      s.seqStart === s.seqEnd
+        ? MS.core.rel.eq([MS.ammp("auth_seq_id"), s.seqStart])
+        : MS.core.rel.inRange([MS.ammp("auth_seq_id"), s.seqStart, s.seqEnd]),
+    // label_atom_id null ('.' in the file) selects the whole residue range; otherwise one atom.
+    "atom-test": s.atomId
+      ? MS.core.logic.and([MS.core.rel.eq([MS.ammp("label_atom_id"), s.atomId]), altTest])
+      : altTest,
+  });
+};
+
+// Union of a network's membership selectors -> the atoms that constitute that network/state.
+export const buildAltGroupExpression = (selectors: AltGroupSelector[]) => {
+  const groups = selectors.map(altGroupAtomGroups);
+  return groups.length === 1 ? groups[0] : MS.struct.combinator.merge(groups);
+};
+
+// The constant "base" part: every atom not claimed by any network selector (empty in files that
+// list only the alternate atoms; the single-conformer scaffold in a full structure).
+export const buildHetBaseExpression = (allSelectors: AltGroupSelector[]) =>
+  MS.struct.modifier.exceptBy({
+    0: MS.struct.generator.all(),
+    by: buildAltGroupExpression(allSelectors),
+  });
+
 export const buildEntityQuery = (entityId: string) =>
   MS.struct.generator.atomGroups({
     "chain-test": MS.core.rel.eq([MS.ammp("label_entity_id"), entityId]),
