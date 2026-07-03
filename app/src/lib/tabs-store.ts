@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { StructureExample } from "./molstar/examples";
 import { useStore } from "./store";
 
 // Multi-structure tabs for the inspector. Each tab is a completely separate context: its own loaded
@@ -20,11 +21,21 @@ interface TabsState {
   closeTab: (id: string) => void;
   setActive: (id: string) => void;
   setTitle: (id: string, title: string) => void;
+
+  // Cross-component request to load a curated example into the ACTIVE tab. The NavBar's Examples
+  // dropdown (next to the DICT switcher) sets this; the active StructureTab consumes it via an effect
+  // guarded by a last-handled nonce. The nonce makes re-picking the same example fire again.
+  pendingExample: { ex: StructureExample; nonce: number } | null;
+  requestExample: (ex: StructureExample) => void;
 }
+
+let exampleNonce = 0;
 
 export const useTabsStore = create<TabsState>((set, get) => ({
   tabs: [{ id: "tab-1", title: "untitled" }],
   activeId: "tab-1",
+  pendingExample: null,
+  requestExample: (ex) => set({ pendingExample: { ex, nonce: ++exampleNonce } }),
 
   addTab: () => {
     const id = nextId();

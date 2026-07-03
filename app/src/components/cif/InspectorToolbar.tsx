@@ -7,33 +7,19 @@ import {
   nonDepositionCategories,
   structuralCategories,
 } from "@/lib/cif-source/classify";
-import type { HierarchyMode } from "@/lib/cif-source/fold-tree";
 import type { CifDocument } from "@/lib/cif-source/segment";
 import { useStore } from "@/lib/store";
+import { useViewSettings } from "@/lib/view-settings";
 import { CategoryFilter, type FilterEntry } from "./CategoryFilter";
-import { ViewMenu } from "./ViewMenu";
 
-// The view-control half of the consolidated inspector toolbar: the View menu / Outline / Table /
-// Expand all / Filter, the pin chip (the dissolved PINNED row — label + jump-back + references +
-// unpin), and the row count. Rendered by SourceInspector and portalled into the pane's full-width
-// top bar (which also holds the file controls), so it owns the view + pin state while sharing one
-// bar with the file controls. Returns a fragment of flex items; the portal target is the flex row.
+// The file-browser controls, rendered by SourceInspector and portalled into the row over the left
+// (source) pane: Table (loops as tables), Expand all, Filter / lenses, the pin chip (the dissolved
+// PINNED row — label + jump-back + references + unpin), and the row count. Table reads the global
+// view-settings store; the naming / hide / outline toggles now live in the NavBar ⚙ gear. Returns a
+// fragment of flex items; the portal target is the flex row.
 export interface InspectorToolbarProps {
   doc: CifDocument;
   rowCount: number;
-  mode: HierarchyMode;
-  onModeChange: (m: HierarchyMode) => void;
-  hideNoise: boolean;
-  onToggleNoise: () => void;
-  collapsePreamble: boolean;
-  onTogglePreamble: () => void;
-  preambleCategories: string[];
-  tableMode: boolean;
-  onToggleTable: () => void;
-  stickyHeader: boolean;
-  onToggleSticky: () => void;
-  outlineShown: boolean;
-  onToggleOutline: () => void;
   allExpanded: boolean;
   onToggleExpandAll: () => void;
   filter: FilterEntry[];
@@ -47,6 +33,8 @@ export interface InspectorToolbarProps {
 
 export function InspectorToolbar(props: InspectorToolbarProps) {
   const { doc } = props;
+  const tableMode = useViewSettings((s) => s.tableMode);
+  const toggleTableMode = useViewSettings((s) => s.toggleTableMode);
 
   // Category + item options for the filter box: every category in the file, and every item
   // (`_cat.attr`) it declares. Selecting any narrows the source view to those categories.
@@ -86,21 +74,7 @@ export function InspectorToolbar(props: InspectorToolbarProps) {
 
   return (
     <>
-      <ViewMenu
-        mode={props.mode}
-        onModeChange={props.onModeChange}
-        collapsePreamble={props.collapsePreamble}
-        onTogglePreamble={props.onTogglePreamble}
-        hideNoise={props.hideNoise}
-        onToggleNoise={props.onToggleNoise}
-        stickyHeader={props.stickyHeader}
-        onToggleSticky={props.onToggleSticky}
-        preambleCategories={props.preambleCategories}
-      />
-      <Toggle on={props.outlineShown} onClick={props.onToggleOutline}>
-        Outline
-      </Toggle>
-      <Toggle on={props.tableMode} onClick={props.onToggleTable}>
+      <Toggle on={tableMode} onClick={toggleTableMode}>
         Table
       </Toggle>
       <button

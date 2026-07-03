@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { useTabsStore } from "@/lib/tabs-store";
 import type { DictVariant } from "@/lib/types";
+import ExamplesDrawer from "./cif/ExamplesDrawer";
+import { SettingsMenu } from "./cif/SettingsMenu";
 
 // Inspector is the default page (/); the dictionary graph moved to /dictionary. The page switch is
 // tucked behind a hover on the "mmCIF" logo to keep the top bar uncluttered.
@@ -49,6 +51,7 @@ export default function NavBar() {
 
   return (
     <header className="flex h-9 shrink-0 items-center gap-3 border-b border-neutral-800 bg-neutral-950 px-3">
+      {onInspector && <SettingsMenu />}
       <div
         ref={ref}
         className="relative"
@@ -90,9 +93,21 @@ export default function NavBar() {
         )}
       </div>
       {onInspector && <InspectorTabs />}
-      <DictVariantSelector />
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {onInspector && <NavExamples />}
+        <DictVariantSelector />
+      </div>
     </header>
   );
+}
+
+// The Examples dropdown, shown only on the inspector page under the het dictionary (its curated demos
+// are the entry point to the proposed heterogeneity extension). Picking one loads into the active tab.
+function NavExamples() {
+  const variant = useStore((s) => s.variant);
+  const requestExample = useTabsStore((s) => s.requestExample);
+  if (variant !== "het") return null;
+  return <ExamplesDrawer onPick={requestExample} />;
 }
 
 // Global dictionary-variant switch. Affects both pages: the schema the inspector annotates against
@@ -104,7 +119,7 @@ function DictVariantSelector() {
   const version = useStore((s) => s.dict?.meta.version ?? s.graph?.meta.version ?? null);
   const v = version ? `v${version}` : "PDBx/mmCIF";
   return (
-    <div className="ml-auto flex shrink-0 items-center gap-1.5">
+    <div className="flex shrink-0 items-center gap-1.5">
       <span className="text-[10px] uppercase tracking-wide text-neutral-600">dict</span>
       <select
         value={variant}

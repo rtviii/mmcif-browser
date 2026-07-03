@@ -146,7 +146,7 @@ export const EXAMPLE_GROUPS: ExampleGroup[] = [
         title: "Two serines flip together",
         blurb: "warm-up · net_1 (both A) / net_2 (both B)",
         view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
-        signature: { category: "pdbx_alt_groups", note: "two networks (net_1/net_2) each select the A or B atoms of Ser34 + Ser89" },
+        signature: { category: "pdbx_alt_groups", note: "two networks (net_1/net_2) each select the A or B atoms of Ser34 + Ser39, one connected chain" },
       },
       {
         id: "het-a",
@@ -162,7 +162,7 @@ export const EXAMPLE_GROUPS: ExampleGroup[] = [
         pdbId: "B",
         file: { url: "/examples/het/case_b_network.cif", name: "case_b_network.cif" },
         title: "Correlated network across two residues",
-        blurb: "Asp30 + His88 flip together, 50/50",
+        blurb: "Asp30 + His35 flip together, 50/50",
         view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
         signature: { category: "pdbx_alt_groups", note: "net_1/net_2 name which alternates across the structure are one state" },
       },
