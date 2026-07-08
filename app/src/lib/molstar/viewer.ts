@@ -1,5 +1,6 @@
 import { Vec3 } from "molstar/lib/mol-math/linear-algebra/3d/vec3";
 import { Vec4 } from "molstar/lib/mol-math/linear-algebra/3d/vec4";
+import { EmptyLoci } from "molstar/lib/mol-model/loci";
 import {
   Structure,
   StructureElement,
@@ -10,6 +11,14 @@ import { PluginUIContext } from "molstar/lib/mol-plugin-ui/context";
 import { renderReact18 } from "molstar/lib/mol-plugin-ui/react18";
 import { PluginUISpec } from "molstar/lib/mol-plugin-ui/spec";
 import {
+  clearStructureOverpaint,
+  setStructureOverpaint,
+} from "molstar/lib/mol-plugin-state/helpers/structure-overpaint";
+import {
+  clearStructureTransparency,
+  setStructureTransparency,
+} from "molstar/lib/mol-plugin-state/helpers/structure-transparency";
+import {
   clearStructureWiggle,
   setStructureWiggleFromUncertainty,
 } from "molstar/lib/mol-plugin-state/helpers/structure-wiggle";
@@ -17,7 +26,6 @@ import {
   StructureSelectionFromExpression,
   TransformStructureConformation,
 } from "molstar/lib/mol-plugin-state/transforms/model";
-import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/state";
 import { PluginCommands } from "molstar/lib/mol-plugin/commands";
 import { StateSelection } from "molstar/lib/mol-state";
 import { Color } from "molstar/lib/mol-util/color";
@@ -27,9 +35,8 @@ import { LabelManager } from "./labels";
 import {
   type AltGroupSelector,
   buildAltGroupExpression,
-  buildHetBaseExpression,
   buildTlsGroupExpression,
-  structureToLoci,
+  executeQuery,
 } from "./queries";
 import { setSelectionWiggleFalloff } from "./wiggle-falloff";
 import { viewerSpec } from "./spec";
@@ -86,9 +93,10 @@ export class MolstarViewer {
   // TLS libration: one transformable sub-structure per rigid body, plus the running animation handle.
   private tlsRefs: TlsRef[] = [];
   private tlsRaf: number | null = null;
-  // Heterogeneity networks: networkId -> the sub-structure selection ref (one coloured component per
-  // network), used to toggle per-network visibility (the state stepper) and to highlight/focus them.
-  private hetRefs: Map<string, string> = new Map();
+  // Heterogeneity networks (colour + membership selectors). The whole structure is drawn as ONE
+  // representation; networks are coloured by overpaint and hidden (state stepper) by transparency, so
+  // every bond stays drawn and nothing floats. Kept here to recompute those layers on each state step.
+  private hetNetworks: HetVizNetwork[] = [];
 
   async init(container: HTMLElement, spec: PluginUISpec = viewerSpec): Promise<void> {
     if (this.ctx) return;
@@ -291,9 +299,11 @@ export class MolstarViewer {
 
   // --- heterogeneity networks (proposed extension) ---
 
-  // Render the constant "base" part grey, then one coloured sub-structure per network (so each can be
-  // shown/hidden independently for the state stepper, and highlighted/focused on its own). Called
-  // instead of buildRepresentation when network membership is supplied.
+  // Draw the WHOLE structure as one ball-and-stick representation (grey), then colour each network in
+  // place with overpaint. Splitting networks into their own components (the old approach) left every
+  // altloc side chain's bond to the shared, grey backbone undrawn — the bond spanned two separate
+  // representations — so the side chains floated. One representation keeps every bond; overpaint adds
+  // colour without new geometry; transparency (the state stepper) hides a network's atoms.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async buildHeterogeneity(trajectory: any, networks: HetVizNetwork[]): Promise<void> {
     const ctx = this.ctx;
@@ -304,68 +314,67 @@ export class MolstarViewer {
     this.modelRef = model.ref;
     const structure = await ctx.builders.structure.createStructure(model);
     if (!this.ctx) return;
-    this.hetRefs = new Map();
+    this.hetNetworks = networks;
 
-    // base / constant scaffold: every atom not claimed by a network (empty in files that list only
-    // the alternate atoms). Always visible, grey.
-    const allSelectors = networks.flatMap((n) => n.selectors);
-    {
-      const b = ctx.state.data.build().to(structure.ref);
-      const sel = b.apply(StructureSelectionFromExpression, {
-        expression: buildHetBaseExpression(allSelectors),
-        label: "base",
-      });
-      await b.commit();
-      if (!this.ctx) return;
-      await ctx.builders.structure.representation.addRepresentation(sel.ref, {
+    // one hierarchy-tracked component for the whole structure (so overpaint/transparency can target it)
+    const comp = await ctx.builders.structure.tryCreateComponentStatic(structure, "all");
+    if (!this.ctx) return;
+    if (comp) {
+      await ctx.builders.structure.representation.addRepresentation(comp, {
         type: "ball-and-stick",
         typeParams: { ignoreLight: true },
         color: "uniform",
         colorParams: { value: Color(HET_BASE_COLOR) },
       });
     }
-
-    // one coloured, independently toggleable sub-structure per network.
-    for (const net of networks) {
-      const b = ctx.state.data.build().to(structure.ref);
-      const sel = b.apply(StructureSelectionFromExpression, {
-        expression: buildAltGroupExpression(net.selectors),
-        label: `network ${net.id}`,
-      });
-      await b.commit();
-      if (!this.ctx) return;
-      await ctx.builders.structure.representation.addRepresentation(sel.ref, {
-        type: "ball-and-stick",
-        typeParams: { ignoreLight: true },
-        color: "uniform",
-        colorParams: { value: Color(net.color) },
-      });
-      this.hetRefs.set(net.id, sel.ref);
-    }
+    if (!this.ctx) return;
+    await this.applyNetworkColors();
+    await this.showAllNetworks();
   }
 
   hasHet(): boolean {
-    return this.hetRefs.size > 0;
+    return this.hetNetworks.length > 0;
   }
 
-  // Show exactly the given networks (plus the always-visible base); hide the rest. Drives the state
-  // stepper — a state is base + its chosen networks.
-  setVisibleNetworks(ids: Set<string>): void {
+  // Loci getter for a network's membership atoms, resolved against the (root) structure — the shape the
+  // overpaint / transparency helpers expect.
+  private netLoci(net: HetVizNetwork) {
+    return async (root: Structure) => executeQuery(buildAltGroupExpression(net.selectors), root) ?? EmptyLoci;
+  }
+
+  // (Re)paint every network its colour. Overpaint recolours the atoms of the single representation in
+  // place, so bonds to the grey backbone stay drawn.
+  private async applyNetworkColors(): Promise<void> {
     if (!this.ctx) return;
-    const state = this.ctx.state.data;
-    for (const [id, ref] of this.hetRefs) setSubtreeVisibility(state, ref, !ids.has(id));
+    const comps = this.wiggleComponents();
+    await clearStructureOverpaint(this.ctx, comps);
+    for (const net of this.hetNetworks) {
+      if (!this.ctx) return;
+      await setStructureOverpaint(this.ctx, comps, Color(net.color), this.netLoci(net));
+    }
   }
 
-  showAllNetworks(): void {
-    this.setVisibleNetworks(new Set(this.hetRefs.keys()));
+  // Show exactly the given networks (plus the always-visible base); hide the rest by making their
+  // atoms transparent. Drives the state stepper — a state is base + its chosen networks.
+  async setVisibleNetworks(ids: Set<string>): Promise<void> {
+    if (!this.ctx) return;
+    const comps = this.wiggleComponents();
+    await clearStructureTransparency(this.ctx, comps);
+    for (const net of this.hetNetworks) {
+      if (!this.ctx) return;
+      if (!ids.has(net.id)) await setStructureTransparency(this.ctx, comps, 1, this.netLoci(net));
+    }
+  }
+
+  async showAllNetworks(): Promise<void> {
+    await this.setVisibleNetworks(new Set(this.hetNetworks.map((n) => n.id)));
   }
 
   private hetLoci(id: string): StructureElement.Loci | null {
-    const ref = this.hetRefs.get(id);
-    if (!ref) return null;
-    const struct = this.getStructureFromRef(ref);
-    if (!struct || struct.elementCount === 0) return null;
-    return structureToLoci(struct);
+    const net = this.hetNetworks.find((n) => n.id === id);
+    const struct = this.getCurrentStructure();
+    if (!net || !struct) return null;
+    return executeQuery(buildAltGroupExpression(net.selectors), struct);
   }
 
   highlightNetwork(id: string | null): void {
@@ -441,7 +450,7 @@ export class MolstarViewer {
   async clear(): Promise<void> {
     this.stopTlsAnimation(false);
     this.tlsRefs = [];
-    this.hetRefs = new Map();
+    this.hetNetworks = [];
     this.modelRef = null;
     this.modelCount = 1;
     if (!this.ctx) return;
@@ -583,7 +592,7 @@ export class MolstarViewer {
   dispose(): void {
     this.stopTlsAnimation(false);
     this.tlsRefs = [];
-    this.hetRefs = new Map();
+    this.hetNetworks = [];
     this.labelManager?.dispose();
     this.labelManager = null;
     this.ctx?.dispose();

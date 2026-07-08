@@ -136,8 +136,8 @@ export default function StructureTab({ id, active }: { id: string; active: boole
   const applyHetState = (idx: number) => {
     if (!viewer || !hetModel) return;
     setHetState(idx);
-    if (idx < 0 || idx >= hetModel.states.length) viewer.showAllNetworks();
-    else viewer.setVisibleNetworks(new Set(hetModel.states[idx].networks));
+    if (idx < 0 || idx >= hetModel.states.length) void viewer.showAllNetworks();
+    else void viewer.setVisibleNetworks(new Set(hetModel.states[idx].networks));
   };
   const stepHetState = (delta: number) => {
     if (!hetModel || !hetModel.states.length) return;
