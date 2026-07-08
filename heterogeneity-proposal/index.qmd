@@ -1,0 +1,864 @@
+---
+title: "Reading mmCIF: minimal files, altlocs, and encoding heterogeneity"
+date: 2026-06-08
+categories: [mmCIF, structural biology, crystallography]
+---
+
+Working notes on how mmCIF actually encodes a structure, pulled out of the Duino
+series into a standalone page so they are easy to browse. Three parts, in order:
+a minimal viable file with none of the hard parts; how alternate locations and
+occupancy encode heterogeneity and exactly where that breaks; and four graded
+cases that compare today's format with the two proposed extensions.
+
+## Part 1 · A minimal viable mmCIF file
+
+
+Before any of the heterogeneity machinery, it helps to have a clean baseline: the
+smallest set of categories that constitutes a usable coordinate file, with no
+alternates, no B-factor variation, and every atom fully present. Once this is
+fixed, every later addition reads as a delta against it.
+
+A coordinate file is built as a spine of cross-references. A handful of small
+categories declare *what* the molecule is and *how* it is named; one big category,
+`atom_site`, holds the coordinates and points back at all the others. Almost
+everything links through one shared key — `entity_id`.
+
+::: {#fig-mvp-structure}
+<svg viewBox="0 0 360 430" width="360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram: entity feeds entity_poly_seq, struct_asym and chem_comp, all flowing into atom_site">
+  <defs>
+    <marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#9ca3af"/></marker>
+  </defs>
+  <rect x="14" y="10" width="120" height="34" rx="6" fill="none" stroke="#d1d5db"/>
+  <text x="74" y="26" text-anchor="middle" font-size="10.5" font-family="monospace" fill="#2563eb">_entry.id</text>
+  <text x="74" y="38" text-anchor="middle" font-size="9" fill="#9ca3af">MIN</text>
+  <rect x="206" y="10" width="140" height="34" rx="6" fill="none" stroke="#d1d5db" stroke-dasharray="3 3"/>
+  <text x="276" y="26" text-anchor="middle" font-size="10" font-family="monospace" fill="#6b7280">_cell · _symmetry</text>
+  <text x="276" y="38" text-anchor="middle" font-size="9" fill="#9ca3af">the unit-cell box</text>
+  <rect x="100" y="64" width="160" height="44" rx="7" fill="#eff6ff" stroke="#2563eb"/>
+  <text x="180" y="83" text-anchor="middle" font-size="11" font-family="monospace" fill="#2563eb">_entity</text>
+  <text x="180" y="98" text-anchor="middle" font-size="9" fill="#4b5563">id 1 · polymer · "tiny peptide"</text>
+  <rect x="14" y="150" width="180" height="48" rx="7" fill="#f3f4f6" stroke="#d1d5db"/>
+  <text x="104" y="169" text-anchor="middle" font-size="10.5" font-family="monospace" fill="#111827">_entity_poly_seq</text>
+  <text x="104" y="188" text-anchor="middle" font-size="9" fill="#4b5563">sequence: 1 GLY · 2 ALA · 3 SER</text>
+  <rect x="210" y="150" width="136" height="48" rx="7" fill="#f3f4f6" stroke="#d1d5db"/>
+  <text x="278" y="169" text-anchor="middle" font-size="10.5" font-family="monospace" fill="#111827">_struct_asym</text>
+  <text x="278" y="188" text-anchor="middle" font-size="9" fill="#4b5563">chain A ↔ entity 1</text>
+  <rect x="14" y="232" width="180" height="44" rx="7" fill="#f3f4f6" stroke="#d1d5db"/>
+  <text x="104" y="251" text-anchor="middle" font-size="10.5" font-family="monospace" fill="#111827">_chem_comp</text>
+  <text x="104" y="268" text-anchor="middle" font-size="9" fill="#4b5563">residue types GLY/ALA/SER (CCD)</text>
+  <rect x="74" y="330" width="212" height="74" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.2"/>
+  <text x="180" y="352" text-anchor="middle" font-size="12" font-family="monospace" fill="#059669">_atom_site</text>
+  <text x="180" y="370" text-anchor="middle" font-size="9.5" fill="#4b5563">one row per atom · the coordinates</text>
+  <text x="180" y="388" text-anchor="middle" font-size="8.5" font-family="monospace" fill="#9ca3af">label_entity_id · label_asym_id ·</text>
+  <text x="180" y="398" text-anchor="middle" font-size="8.5" font-family="monospace" fill="#9ca3af">label_seq_id · label_comp_id</text>
+  <line x1="150" y1="108" x2="120" y2="148" stroke="#9ca3af" marker-end="url(#ah)"/>
+  <text x="92" y="132" font-size="8" font-family="monospace" fill="#9ca3af">entity_id</text>
+  <line x1="215" y1="108" x2="260" y2="148" stroke="#9ca3af" marker-end="url(#ah)"/>
+  <text x="248" y="132" font-size="8" font-family="monospace" fill="#9ca3af">entity_id</text>
+  <line x1="104" y1="198" x2="104" y2="230" stroke="#9ca3af" marker-end="url(#ah)"/>
+  <line x1="120" y1="276" x2="150" y2="328" stroke="#9ca3af" marker-end="url(#ah)"/>
+  <text x="74" y="306" font-size="8" font-family="monospace" fill="#9ca3af">comp_id</text>
+  <line x1="160" y1="198" x2="172" y2="328" stroke="#9ca3af" marker-end="url(#ah)"/>
+  <text x="150" y="250" font-size="8" font-family="monospace" fill="#9ca3af">seq_id</text>
+  <line x1="278" y1="198" x2="210" y2="330" stroke="#9ca3af" marker-end="url(#ah)"/>
+  <text x="250" y="252" font-size="8" font-family="monospace" fill="#9ca3af">asym_id</text>
+</svg>
+
+**The minimal spine.** Everything hangs off `_entity`; `_atom_site` is the sink
+that references all of it.
+:::
+
+### The file itself
+
+A complete minimal file for a three-residue peptide, glycine–alanine–serine, in a
+single chain. Coordinates are illustrative.
+
+```
+data_MIN
+#
+_entry.id   MIN
+#
+_cell.entry_id           MIN
+_cell.length_a           40.000
+_cell.length_b           40.000
+_cell.length_c           40.000
+_cell.angle_alpha        90.000
+_cell.angle_beta         90.000
+_cell.angle_gamma        90.000
+#
+_symmetry.entry_id               MIN
+_symmetry.space_group_name_H-M   'P 1'
+#
+loop_
+_entity.id
+_entity.type
+_entity.pdbx_description
+1 polymer 'tiny peptide'
+#
+_entity_poly.entity_id                 1
+_entity_poly.type                      'polypeptide(L)'
+_entity_poly.pdbx_seq_one_letter_code  GAS
+#
+loop_
+_entity_poly_seq.entity_id
+_entity_poly_seq.num
+_entity_poly_seq.mon_id
+1 1 GLY
+1 2 ALA
+1 3 SER
+#
+loop_
+_chem_comp.id
+_chem_comp.type
+GLY 'peptide linking'
+ALA 'peptide linking'
+SER 'peptide linking'
+#
+_struct_asym.id          A
+_struct_asym.entity_id   1
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.auth_seq_id
+_atom_site.auth_asym_id
+ATOM 1  N N   GLY A 1 1  0.000 0.000 0.000 1.00 1 A
+ATOM 2  C CA  GLY A 1 1  1.458 0.000 0.000 1.00 1 A
+ATOM 3  C C   GLY A 1 1  2.009 1.420 0.000 1.00 1 A
+ATOM 4  O O   GLY A 1 1  1.251 2.390 0.000 1.00 1 A
+ATOM 5  N N   ALA A 1 2  3.332 1.550 0.000 1.00 2 A
+ATOM 6  C CA  ALA A 1 2  4.000 2.840 0.000 1.00 2 A
+ATOM 7  C C   ALA A 1 2  5.510 2.700 0.000 1.00 2 A
+ATOM 8  O O   ALA A 1 2  6.040 1.590 0.000 1.00 2 A
+ATOM 9  C CB  ALA A 1 2  3.560 3.640 1.220 1.00 2 A
+ATOM 10 N N   SER A 1 3  6.200 3.840 0.000 1.00 3 A
+ATOM 11 C CA  SER A 1 3  7.660 3.900 0.000 1.00 3 A
+ATOM 12 C C   SER A 1 3  8.200 5.320 0.000 1.00 3 A
+ATOM 13 O O   SER A 1 3  7.450 6.300 0.000 1.00 3 A
+ATOM 14 C CB  SER A 1 3  8.160 3.140 1.230 1.00 3 A
+ATOM 15 O OG  SER A 1 3  9.580 3.180 1.300 1.00 3 A
+#
+```
+
+### The categories, one at a time
+
+`_entry.id` is the identifier for the whole file, echoed by other categories that
+need to name the entry. `data_MIN` on the first line is the *data block* name —
+one per file.
+
+`_cell` and `_symmetry` are the crystallographic context: the unit-cell
+dimensions and the space group. A bare list of coordinates does not strictly need
+them, but any crystal structure carries them, and validators expect them.
+
+`_entity` lists the distinct chemical molecules in the structure — one row per
+unique entity, not per copy. Its `type` is `polymer`, `non-polymer`, or `water`.
+Here there is a single polymer entity, id `1`. This id is the hub the rest of the
+file references.
+
+`_entity_poly` adds, for a polymer entity, the polymer `type`
+(`polypeptide(L)` here) and the one-letter sequence in
+`pdbx_seq_one_letter_code` (`GAS`). It is keyed to the entity by `entity_id`.
+
+`_entity_poly_seq` is the canonical sequence written as an ordered list of
+monomers: one row per residue, carrying `entity_id`, a sequence position `num`,
+and the three-letter `mon_id`. This is the authoritative chemical sequence, and
+`num` is what coordinates point back to.
+
+`_chem_comp` lists the chemical-component types used — the residue or ligand
+identifiers (`GLY`, `ALA`, `SER`). Each is a reference into the Chemical Component
+Dictionary, the external catalogue that defines every component's atoms and bonds,
+so the file itself does not have to.
+
+`_struct_asym` declares the asymmetric units — effectively the chains. Each row
+gives a chain label `id` and the `entity_id` it is a copy of. Here chain `A` is one
+instance of entity `1`. Multiple chains of the same molecule would be several rows
+sharing one `entity_id`.
+
+`_atom_site` is the coordinate table: one row per atom. Each row names the atom
+(`label_atom_id`), its residue type (`label_comp_id`), its chain
+(`label_asym_id`), its entity (`label_entity_id`), its sequence position
+(`label_seq_id`), the Cartesian coordinates, and the `occupancy` — uniformly
+`1.00` here. It is the sink into which every other category feeds.
+
+### The spine — how the links resolve
+
+Reading the cross-references makes the structure concrete. `entity.id` is the hub:
+`entity_poly.entity_id`, `entity_poly_seq.entity_id`, `struct_asym.entity_id`, and
+`atom_site.label_entity_id` all point at it. From there, an `atom_site` row is
+located by following three more links — `label_asym_id` to `struct_asym.id` (which
+chain), `label_seq_id` to `entity_poly_seq.num` (which residue in the sequence),
+and `label_comp_id` to `chem_comp.id` (which residue type, the same value
+`entity_poly_seq.mon_id` carries). No coordinate stands alone; each is pinned into
+the molecular description by those keys.
+
+### Two numbering systems: label\_ and auth\_
+
+Most identifying columns come in a pair. The `label_` items are the canonical,
+dictionary-driven identifiers used internally (`label_asym_id`, `label_seq_id`,
+`label_atom_id`, `label_comp_id`). The `auth_` items hold the author's own
+naming — `auth_asym_id` is the chain letter as the depositor labelled it and
+`auth_seq_id` is the PDB residue number people actually cite (the "26" in
+"Thr26"). The two can disagree: the canonical sequence numbering may start at 1
+while the author numbering follows a historical convention. In the minimal file
+above they coincide, but keeping the distinction in mind avoids confusion later.
+
+### What this baseline deliberately leaves out
+
+Everything the series adds is a column or a category layered onto this skeleton.
+The minimal file has no `label_alt_id` column, a uniform `B_iso_or_equiv` (omitted
+above), occupancy fixed at `1.00`, a single model, and only `ATOM` records. The
+additions, in roughly increasing complexity, are: alternate positions
+(`label_alt_id`) and the occupancy and B-factor variation that accompany them;
+multiple models (`pdbx_PDB_model_num` greater than 1) for ensembles; `HETATM`
+records for non-polymer entities — ligands, ions, water; `_struct_conn` for bonds
+beyond the standard polymer linkage, such as disulfides and metal coordination;
+and, in the proposal this series concerns, the new heterogeneity categories. Each
+is best understood as a specific, bounded extension of the spine above.
+
+
+## Part 2 · Altlocs, occupancy, and where they break
+
+
+A reference for the two mechanisms the legacy format already uses to record
+heterogeneity — the alternate-location indicator and occupancy — built from
+small worked cases. The point is to be exact about what each mechanism
+guarantees, what it merely conventionally implies, and the precise place the
+convention fails. Everything here is current-format behaviour; the proposed
+extensions are elsewhere.
+
+Start from the one fact the rest depends on: a crystallographic model is an
+average over an enormous number of copies of the molecule in the lattice, so the
+"structure" is a population portrait, not a snapshot of one molecule. There are
+two ways the format records that an atom is not pinned to a single point. A
+**B factor** smears the atom around one mean position (a fuzzy ball — harmonic
+disorder). An **altloc** plus an **occupancy** says the atom sits in two or more
+distinct positions and gives the population share of each. The first is one
+spot, blurred; the second is several spots, counted. Almost all of the trouble
+below comes from asking the second mechanism to carry facts it was never defined
+to hold.
+
+<div class="msb-embed">
+<link rel="stylesheet" href="/molstar_assets/molstar.css">
+<link rel="stylesheet" href="/molstar_assets/molstar-blog.css">
+<div class="msb-split">
+<div id="cif-altloc" class="msb-cif"></div>
+<div class="msb-viewer-wrap"><div id="mv-altloc" class="msb-viewer"></div></div>
+</div>
+<p class="msb-viewer-caption">Crambin (PDB <a href="https://www.rcsb.org/structure/1EJG">1EJG</a>, 0.54&nbsp;&#8491;) — its <code>atom_site</code> table beside the structure. <strong>Hover a row</strong> (chain, residue, or atom) to light up the corresponding piece in 3D with a label; <strong>right-click a residue</strong> for its altlocs; drag to rotate.</p>
+<script defer src="/molstar_assets/molstar.js"></script>
+<script defer src="/molstar_assets/molstar-blog.js"></script>
+<script defer src="/molstar_assets/addons/residue-card.js"></script>
+<script defer src="/molstar_assets/addons/mmcif-explorer.js"></script>
+<script>
+(function () {
+  function boot() {
+    if (!window.MolstarBlog || !window.ResidueCard || !window.MmcifExplorer) { setTimeout(boot, 30); return; }
+    MolstarBlog.create('#mv-altloc', { url: 'https://files.rcsb.org/download/1EJG.cif' })
+      .then(function (v) {
+        ResidueCard.attach(v.plugin, { single: true });
+        MmcifExplorer.attach(v.plugin, '#cif-altloc');
+      })
+      .catch(function (e) { console.error('[mmcif-primer viewer]', e); });
+  }
+  boot();
+})();
+</script>
+</div>
+
+### One letter, two jobs
+
+It helps to separate what the format *guarantees* about an altloc letter from
+what readers *assume* about it.
+
+What is codified is local. The dictionary definition of
+[`_atom_site.label_alt_id`](https://mmcif.wwpdb.org/dictionaries/mmcif_pdbx_v50.dic/Items/_atom_site.label_alt_id.html)
+is, in full:
+
+> A place holder to indicate alternate conformation. The alternate conformation
+> can be an entire polymer chain, or several residues or partial residue
+> (several atoms within one residue). If an atom is provided in more than one
+> position, then a non-blank alternate location indicator must be used for each
+> of the atomic positions.
+
+That is the whole definition. It marks that an atom has alternates and bounds the
+*scope* of one alternate; it attaches no meaning to two atoms in different
+residues sharing a letter. The companion field
+[`_atom_site.occupancy`](https://mmcif.wwpdb.org/docs/tutorials/content/atomic-description.html)
+is defined just as narrowly: "the fraction of the atom present at this atom
+position."
+
+What software *enforces* is also local — pairwise non-interaction. As the
+encoding proposal puts it ([encoding paper](https://doi.org/10.1107/S2052252524005098)), "refinement and validation
+programs treat atoms sharing the same altloc as having the ability to interact
+with each other and with atoms lacking an altloc, but not with atoms with
+different altlocs." So the operative meaning of the letter is a clash
+instruction: A interacts with A and with blank, never with B.
+
+What readers *assume* is global, and it is nowhere in the format. The habit of
+reading "altloc A everywhere = one coherent conformation of the whole molecule"
+is a convention that tools apply, not a rule the format guarantees. Libraries do
+build it in by default — in
+[gemmi](https://gemmi.readthedocs.io/en/stable/mol.html), selecting `altloc='A'`
+returns "only the A conformer ... atoms with altloc either blank or A," i.e. all
+the A-labelled atoms across the structure are assembled into one conformer. That
+is convenient and correct for clean two-state cases, but the assembly is the
+software's projection; the deposited file never asserts that A-at-residue-26 and
+A-at-residue-90 co-occur.
+
+::: {.callout-note appearance="simple"}
+The proposal states the consequence directly for a three-state case: you can
+write the conformations as "A (loop in), B (loop out, position 1) and C (loop
+out, position 2), but these would have no descriptive or hierarchical
+relationship to each other" ([encoding paper](https://doi.org/10.1107/S2052252524005098)). The relationship a modeller
+knows lives only in the refinement script (grouped occupancy), and is discarded
+on deposition.
+:::
+
+So the "double job" is precise: the letter is asked to mark local alternates
+(defined, enforced) and to encode which alternates across the molecule belong to
+one global state (assumed, never codified). When the two coincide, everything
+works. The cases below are where they come apart.
+
+### Four toy cases
+
+All four are invented (TOY) to isolate one effect each; a verified real entry
+follows. Pseudo-CIF shows real column names with one atom per group and
+coordinates omitted.
+
+#### 1 · Clean — one residue, three rotamers {#sec-toy-clean}
+
+A serine hydroxyl sampling three positions. This is altloc and occupancy doing
+exactly their job.
+
+::: {#fig-toy-clean}
+<svg viewBox="0 0 300 120" width="330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Serine OG drawn in three alternate positions, occupancies 60, 20 and 20 percent">
+  <rect x="20" y="92" width="260" height="8" rx="4" fill="#9ca3af" opacity="0.4"/>
+  <line x1="150" y1="92" x2="150" y2="54" stroke="#9ca3af" stroke-width="1.5"/>
+  <circle cx="150" cy="42" r="13" fill="#059669"/>
+  <circle cx="122" cy="48" r="6" fill="#2563eb"/>
+  <circle cx="178" cy="48" r="6" fill="#d97706"/>
+  <text x="150" y="114" text-anchor="middle" font-size="11" fill="#4b5563">Ser34 · OG — C 60%, A 20%, B 20%</text>
+</svg>
+
+**One residue, three spots.** Dot size is occupancy; the three add to 1.0.
+:::
+
+```
+loop_
+_atom_site.label_atom_id
+_atom_site.label_comp_id
+_atom_site.label_seq_id
+_atom_site.label_alt_id
+_atom_site.occupancy
+# atom comp seq alt  occ
+  OG   SER  34  A   0.20
+  OG   SER  34  B   0.20
+  OG   SER  34  C   0.60
+```
+
+Fine, with nothing missing. One atom, three rows, occupancies sum to 1.0 within
+the residue. The letter is unambiguous because everything it relates lives in
+one place.
+
+#### 2 · A partial ligand — occupancy's second job {#sec-toy-ligand}
+
+An ethylene glycol present in 40% of copies. This answers the common worry —
+no, a sub-1.0 occupancy does not break any sum rule.
+
+::: {#fig-toy-ligand}
+<svg viewBox="0 0 300 120" width="330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A ligand pill present at 40 percent next to a dashed empty pocket at 60 percent">
+  <rect x="20" y="90" width="260" height="8" rx="4" fill="#9ca3af" opacity="0.4"/>
+  <rect x="46" y="34" width="78" height="30" rx="9" fill="#dc2626" fill-opacity="0.14" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="85" y="53" text-anchor="middle" font-size="12" fill="#dc2626">EDO</text>
+  <text x="85" y="80" text-anchor="middle" font-size="10.5" fill="#4b5563">present 40%</text>
+  <rect x="176" y="34" width="78" height="30" rx="9" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <text x="215" y="54" text-anchor="middle" font-size="13" fill="#9ca3af">—</text>
+  <text x="215" y="80" text-anchor="middle" font-size="10.5" fill="#9ca3af">empty 60% (no atoms)</text>
+</svg>
+
+**Presence is a number; absence is the lack of rows.**
+:::
+
+```
+# group  atom comp seq alt  occ
+  HETATM C1   EDO  201  .   0.40
+  HETATM O1   EDO  201  .   0.40
+  HETATM C2   EDO  201  .   0.40
+  HETATM O2   EDO  201  .   0.40
+```
+
+The sum-to-one convention governs the alternates of one atom, not the whole
+file, so a lone partial atom is legal. The other 60% is simply nothing — no rows.
+The catch surfaces later: the "absent" state has no representation, so there is
+nowhere to attach a B factor, an occupancy that participates in a sum, or a link
+saying "absent ligand goes with the apo protein." Absence cannot be coupled to
+anything.
+
+#### 3 · Two flips, same letters — the correlation is not in the file {#sec-toy-correlation}
+
+Two distant residues each flip A/B at 50/50. Identical bytes describe two
+different realities.
+
+::: {#fig-toy-correlation}
+<svg viewBox="0 0 300 120" width="330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two residues forty angstrom apart, each in two alternate positions A and B">
+  <rect x="20" y="90" width="260" height="8" rx="4" fill="#9ca3af" opacity="0.4"/>
+  <line x1="80" y1="90" x2="80" y2="56" stroke="#9ca3af" stroke-width="1.5"/>
+  <circle cx="66" cy="48" r="9" fill="#2563eb"/>
+  <circle cx="94" cy="48" r="9" fill="#d97706"/>
+  <text x="80" y="112" text-anchor="middle" font-size="11" fill="#4b5563">Tyr50</text>
+  <line x1="220" y1="90" x2="220" y2="56" stroke="#9ca3af" stroke-width="1.5"/>
+  <circle cx="206" cy="48" r="9" fill="#2563eb"/>
+  <circle cx="234" cy="48" r="9" fill="#d97706"/>
+  <text x="220" y="112" text-anchor="middle" font-size="11" fill="#4b5563">Leu90</text>
+  <text x="150" y="28" text-anchor="middle" font-size="10.5" fill="#9ca3af">~40 Å apart, no contact</text>
+</svg>
+
+**Same letters, two possible meanings.**
+:::
+
+```
+# atom comp seq alt  occ
+  OH   TYR  50  A   0.50   # "out"
+  OH   TYR  50  B   0.50   # "in"
+  CD1  LEU  90  A   0.50   # "up"
+  CD1  LEU  90  B   0.50   # "down"
+```
+
+Reading 1 (correlated): A50 always with A90 — two real frames, `{out, up}` and
+`{in, down}`. Reading 2 (independent): two unrelated coin-flips — all four
+combinations occur. The four rows are identical for both. The matching A's hint
+at Reading 1, but that hint is the unenforced convention from the section above;
+refinement only knows "A does not clash with B," which says nothing across 40 Å.
+This is the exact reason a viewer cannot assemble coherent whole-molecule frames
+from altloc letters alone.
+
+#### 4 · The real fragment shape — coupling, cardinality, and the absent state {#sec-toy-fragment}
+
+A fragment bound in 30% of copies; when bound, a tyrosine gate swings open; a
+nearby aspartate samples three positions. Three failure modes in one site.
+
+::: {#fig-toy-fragment}
+<svg viewBox="0 0 300 130" width="330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A ligand present at 30 percent, a tyrosine with two alternates, and an aspartate with three alternates">
+  <rect x="20" y="98" width="260" height="8" rx="4" fill="#9ca3af" opacity="0.4"/>
+  <rect x="24" y="40" width="58" height="28" rx="9" fill="#dc2626" fill-opacity="0.14" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="53" y="58" text-anchor="middle" font-size="11" fill="#dc2626">LIG</text>
+  <text x="53" y="86" text-anchor="middle" font-size="9.5" fill="#4b5563">30% / absent 70%</text>
+  <line x1="158" y1="98" x2="158" y2="60" stroke="#9ca3af" stroke-width="1.5"/>
+  <circle cx="146" cy="52" r="6" fill="#2563eb"/>
+  <circle cx="172" cy="50" r="10" fill="#d97706"/>
+  <text x="158" y="120" text-anchor="middle" font-size="10" fill="#4b5563">Tyr120 (A/B)</text>
+  <line x1="236" y1="98" x2="236" y2="60" stroke="#9ca3af" stroke-width="1.5"/>
+  <circle cx="222" cy="52" r="7" fill="#2563eb"/>
+  <circle cx="242" cy="49" r="9" fill="#d97706"/>
+  <circle cx="258" cy="54" r="6" fill="#059669"/>
+  <text x="238" y="120" text-anchor="middle" font-size="10" fill="#4b5563">Asp122 (A/B/C)</text>
+</svg>
+
+**Every blue is just the letter "A" — reused on purpose to show the problem.**
+:::
+
+```
+# group  atom comp seq alt  occ
+  HETATM N1   LIG  301  A   0.30
+  ATOM   OH   TYR  120  A   0.30   # gate open
+  ATOM   OH   TYR  120  B   0.70   # gate closed
+  ATOM   OD1  ASP  122  A   0.30
+  ATOM   OD1  ASP  122  B   0.45
+  ATOM   OD1  ASP  122  C   0.25
+```
+
+Three things go wrong at once. *Coupling by coincidence:* LIG-A at 0.30 and
+Tyr-open-A at 0.30 are meant to be the same 30% of copies, but only the shared
+letter says so — and LIG's absent 70% has no row to pin to Tyr-closed-B.
+*Unequal cardinality:* Tyr has two states, Asp has three; which Asp goes with
+Tyr-open? A-with-A by habit, but Asp's B and C have no Tyr partner.
+*Phantom match:* Asp-A is also 0.30, the same number as the bound state — real
+coupling or coincidence is unknowable from the file.
+
+### A real entry: 5E1N {#sec-real-5e1n}
+
+PDB entry 5E1N is calmodulin solved at atomic resolution and refined with
+explicit experimental phasing precisely to expose disorder; the calcium-binding
+loops carry extensive alternates. Concretely, the backbone carbonyl oxygen of
+Thr26 is modelled in four alternate positions (altlocs A, B, C, D), each
+coordinating the same calcium ion (`CA 203`) at a different distance — 2.33,
+2.45, 2.65 and 2.10 Å in the deposited `metalc` records — and the neighbouring
+Glu31 carboxylate oxygens carry the same four labels (REAL; verified from the
+deposited file).
+
+This is genuine conformational heterogeneity, the four-state version of toy case
+3. The file states that Thr26 has four alternates and that Glu31 has four
+alternates. It does not state whether "D at Thr26" belongs in the same physical
+frame as "D at Glu31" — even though they chelate one shared ion and almost
+certainly move together. Across a whole EF-hand of four-way alternates the number
+of letter-consistent global frames the reader might assemble is large, and the
+format endorses none of them.
+
+::: {.callout-note appearance="simple"}
+Two further real entries appear in the surrounding literature and can be read the
+same way, noted here as described rather than re-derived: 6B90 is the
+multi-temperature multiconformer example walked through in the encoding proposal
+([encoding paper](https://doi.org/10.1107/S2052252524005098)), and 7HHS is a fragment-screening entry with an apo and
+a bound protein conformation plus two mutually exclusive ligand poses — the real
+counterpart of toy case 4.
+:::
+
+### What this sets up
+
+Every failure above is the same shortfall: occupancy records the *marginal*
+fraction of each event, and the altloc letter is the only carrier of which events
+*co-occur* — a carrier the format never defined for that purpose. Repairing it
+means writing the relationships down explicitly: which alternates form one state,
+which states nest inside which, and which cannot co-exist. That is the subject of
+the proposed heterogeneity categories.
+
+
+## Part 3 · Four graded cases, three ways
+
+
+Four cases of growing difficulty — single residue, a two-residue network, a
+nested compositional/conformational pocket, and a multi-chain metal site. Each is
+read three ways: what the current format can and cannot do (and what is lost),
+how the heterogeneity-categories proposal ([encoding paper](https://doi.org/10.1107/S2052252524005098)) would handle
+it, and the residue-range simplification favoured by the refinement side, with
+its limits. The baseline format these build on is covered separately in the
+Part 1 of this page. Cases A–C are invented to isolate one
+effect each; case D is anchored on a real entry.
+
+### Conventions used across these examples {#sec-grade-conventions}
+
+So the three encodings can be compared line for line, the same column names and
+state names are used in every case.
+
+*Current mmCIF* uses the standard `atom_site` columns, shown as
+`atom comp [chain] seq alt occ` — that is, `label_atom_id`, `label_comp_id`, an
+optional `auth_asym_id`, `label_seq_id`, `label_alt_id`, and `occupancy`.
+
+*Stephanie's proposal* adds one per-atom column, `_atom_site.pdbx_heterogeneity_id`
+(a state name), and two loops: `_pdbx_heterogeneity_hierarchy` with
+`.id .parent .details` (the state tree), and `_pdbx_state_coexistence` with
+`.rule .heterogeneity_id .heterogeneity_ids` (only `NOT` rows carry information —
+`AND` is the hierarchy and `OR` is the default).
+
+*Martin's proposal* touches `atom_site` not at all — it reuses `label_alt_id` —
+and adds `_pdbx_alt_groups` with
+`.alt_group_id .auth_asym_id .auth_seq_id_start .auth_seq_id_end .label_alt_id`
+(which atoms are in each state, by residue range), plus
+`_pdbx_heterogeneity_hierarchy` with
+`.alt_group_id .coexistence_group_id .parent_alt_groups_id` (the nesting, and which
+mutually-exclusive set each state belongs to).
+
+State names are shared between the two proposals so the rows line up: `base` is the
+always-present root; the rest are named by meaning (`apo`, `bound`, `lig_a`,
+`net_1`, `sphere_a`, …); and a coexistence-group name (`protein_state`,
+`ligand_pose`, `coord_sphere`, …) labels each set of mutually-exclusive
+alternatives.
+
+### A · One residue, two rotamers {#sec-grade-a}
+
+An aspartate side chain in two positions, 60/40.
+
+::: {#fig-grade-a}
+<svg viewBox="0 0 280 96" width="300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Aspartate side chain in two alternate positions, 60 and 40 percent">
+  <rect x="20" y="72" width="240" height="7" rx="3" fill="#9ca3af" opacity="0.4"/>
+  <line x1="140" y1="72" x2="140" y2="44" stroke="#9ca3af" stroke-width="1.5"/>
+  <circle cx="126" cy="36" r="11" fill="#2563eb"/>
+  <circle cx="160" cy="40" r="8" fill="#d97706"/>
+  <text x="140" y="92" text-anchor="middle" font-size="10.5" fill="#4b5563">Asp30 · A 60% / B 40%</text>
+</svg>
+
+**The baseline the format already handles.**
+:::
+
+*Current mmCIF.* Fully handled.
+
+```
+# atom comp seq alt  occ
+OD1  ASP  30  A   0.60
+OD1  ASP  30  B   0.40
+```
+
+Two altloc rows, occupancies sum to 1.0 within the residue, and the side chain's
+two positions are unambiguous because everything that relates them lives in one
+residue. Nothing is lost.
+
+*Stephanie's proposal.* The altloc would move into a `pdbx_heterogeneity_id` (two
+states, `a` and `b`, both children of `base`). With a single residue there is no
+network and no nesting, so no hierarchy or coexistence rows are needed — the new
+categories are opt-in and only earn their keep when a relationship spans residues.
+
+*Martin's simplification.* Nothing to add; the standard altlocs already express
+this, and no `_pdbx_alt_groups` row is needed. Its limit here is none, because
+there is no cross-residue relationship to lose.
+
+### B · A correlated network across two residues {#sec-grade-b}
+
+Asp30 and His88, distant but hydrogen-bonded, flip together: state `net_1` is both
+in rotamer 1, state `net_2` is both in rotamer 2, 50/50.
+
+::: {#fig-grade-b}
+<svg viewBox="0 0 280 104" width="300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two residues, each in two alternate positions, linked as one network">
+  <rect x="20" y="78" width="240" height="7" rx="3" fill="#9ca3af" opacity="0.4"/>
+  <line x1="78" y1="78" x2="78" y2="48" stroke="#9ca3af" stroke-width="1.5"/>
+  <circle cx="64" cy="40" r="9" fill="#2563eb"/>
+  <circle cx="92" cy="40" r="9" fill="#d97706"/>
+  <text x="78" y="98" text-anchor="middle" font-size="10.5" fill="#4b5563">Asp30</text>
+  <line x1="202" y1="78" x2="202" y2="48" stroke="#9ca3af" stroke-width="1.5"/>
+  <circle cx="188" cy="40" r="9" fill="#2563eb"/>
+  <circle cx="216" cy="40" r="9" fill="#d97706"/>
+  <text x="202" y="98" text-anchor="middle" font-size="10.5" fill="#4b5563">His88</text>
+  <path d="M64 30 Q140 8 188 30" fill="none" stroke="#2563eb" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>
+  <path d="M92 31 Q140 16 216 31" fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>
+</svg>
+
+**The dashed links are the fact the format can't state.**
+:::
+
+*Current mmCIF.* Can place both residues' alternates; cannot state they form one
+network.
+
+```
+# atom comp seq alt  occ
+CG   ASP  30  A   0.50
+CG   ASP  30  B   0.50
+NE2  HIS  88  A   0.50
+NE2  HIS  88  B   0.50
+```
+
+That Asp30-A goes with His88-A is implied only by the shared letter — convention,
+not a stated fact. The coupling is realised during refinement (grouped occupancy)
+and discarded on deposition. What is lost is the explicit network, and the
+convention is fragile: introduce a third nearby residue with one or three
+alternates and the letter mapping no longer lines up.
+
+*Stephanie's proposal.* Give both residues the same `pdbx_heterogeneity_id` per
+state, both children of `base`, with a `NOT` row to make them exclusive.
+
+```
+_pdbx_heterogeneity_hierarchy
+ id     parent  details
+ base   .       core
+ net_1  base    rotamer network, position 1
+ net_2  base    rotamer network, position 2
+
+_pdbx_state_coexistence
+ rule  heterogeneity_id  heterogeneity_ids
+ NOT   net_1             net_2
+
+# atom_site.pdbx_heterogeneity_id: Asp30 and His88 atoms tagged net_1 / net_2
+```
+
+Co-occurrence is now written down rather than inferred: one state name spans both
+residues.
+
+*Martin's simplification.* Define the network in `_pdbx_alt_groups` by residue
+range plus altloc, touching nothing in `atom_site`.
+
+```
+_pdbx_alt_groups
+ alt_group_id  auth_asym_id  auth_seq_id_start  auth_seq_id_end  label_alt_id
+ net_1         A             30                 30               A
+ net_1         A             88                 88               A
+ net_2         A             30                 30               B
+ net_2         A             88                 88               B
+```
+
+It reuses the altloc letters and maps cleanly onto existing occupancy-group
+refinement. Its limit is granularity: because membership is keyed by residue, it
+cannot put two atoms of the same residue and altloc into different networks — the
+backbone-amide-versus-side-chain split needs an atom-level escape hatch.
+
+### C · Compositional and conformational, with nesting {#sec-grade-c}
+
+Apo (70%) versus bound (30%); a gate residue opens only when bound; the bound
+ligand has two poses (0.20 and 0.10).
+
+::: {#fig-grade-c}
+<svg viewBox="0 0 280 112" width="300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A gate residue with two alternates and a ligand present at 30 percent in two poses">
+  <rect x="20" y="86" width="240" height="7" rx="3" fill="#9ca3af" opacity="0.4"/>
+  <line x1="96" y1="86" x2="96" y2="52" stroke="#9ca3af" stroke-width="1.5"/>
+  <circle cx="82" cy="44" r="6" fill="#2563eb"/>
+  <circle cx="108" cy="42" r="10" fill="#d97706"/>
+  <text x="96" y="106" text-anchor="middle" font-size="10" fill="#4b5563">Tyr120 open/closed</text>
+  <rect x="170" y="30" width="42" height="24" rx="7" fill="#dc2626" fill-opacity="0.16" stroke="#dc2626" stroke-width="1.4"/>
+  <rect x="186" y="40" width="42" height="24" rx="7" fill="none" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="3 3" opacity="0.6"/>
+  <text x="200" y="106" text-anchor="middle" font-size="10" fill="#4b5563">ligand A / B (30%)</text>
+</svg>
+
+**Nesting and the absent state are the two new demands.**
+:::
+
+*Current mmCIF.* Places the gate alternates and ligand poses with partial
+occupancy; cannot express the relationships among them.
+
+```
+# atom comp seq alt  occ
+OH   TYR  120 A   0.30   # gate open  (bound)
+OH   TYR  120 B   0.70   # gate closed (apo)
+.    LIG  301 A   0.20
+.    LIG  301 B   0.10
+```
+
+Nothing states that the two ligand poses sum to the bound occupancy (nesting),
+that the closed gate goes with the absent ligand (coupling), or that apo and
+bound are the two global frames. The absent 70% of the ligand has no row at all,
+so there is nowhere to attach the coupling. All of it lives in the refinement
+script and none survives deposition.
+
+*Stephanie's proposal.* A hierarchy with nested occupancy and exclusions.
+
+```
+_pdbx_heterogeneity_hierarchy
+ id     parent  details
+ base   .       core
+ apo    base    apo, gate closed
+ bound  base    holo, gate open
+ lig_a  bound   ligand pose A
+ lig_b  bound   ligand pose B
+
+_pdbx_state_coexistence
+ rule  heterogeneity_id  heterogeneity_ids
+ NOT   apo               bound
+ NOT   lig_a             lig_b
+
+# occupancy:  apo + bound = 1 ;  lig_a + lig_b = occ(bound)
+```
+
+The absent ligand finally has a home — the named `apo` node — and the closed gate
+attaches to it; cardinality is handled by nesting rather than by matching letters.
+
+*Martin's simplification.* The same nesting via membership (`_pdbx_alt_groups`)
+plus a hierarchy loop carrying a coexistence-group and a parent; the separate
+coexistence table is empty here.
+
+```
+_pdbx_alt_groups   # apo / bound / lig_a / lig_b, each by residue range + altloc
+
+_pdbx_heterogeneity_hierarchy
+ alt_group_id  coexistence_group_id  parent_alt_groups_id
+ apo           protein_state         .
+ bound         protein_state         .
+ lig_a         ligand_pose           bound
+ lig_b         ligand_pose           bound
+```
+
+Because siblings in a coexistence-group exclude each other implicitly and
+exclusion inherits to descendants, the `NOT` table collapses to nothing. Its
+limits: the ligand-absent fact is still only implicit (the `apo` state is carried
+by the protein group, not a ligand row), and expressing many nested layers through
+a flat group-plus-parent table becomes unwieldy.
+
+### D · Multi-chain metal coordination with alternates {#sec-grade-d}
+
+A calcium ion at a two-chain interface, coordinated by acidic residues from both
+chains, each modelled in four alternates (A–D). PDB entry 5E1N is the real anchor:
+its calcium-binding loops carry exactly this four-altloc heterogeneity, with the
+coordination recorded as altloc-specific `metalc` bonds (REAL; verified from the
+deposited file — e.g. Thr26 carbonyl O in altlocs A–D coordinating `CA 203` at
+2.33/2.45/2.65/2.10 Å).
+
+::: {#fig-grade-d}
+<svg viewBox="0 0 280 128" width="300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A calcium ion between two chains, coordinated by residues each in four alternate positions">
+  <rect x="18" y="20" width="244" height="7" rx="3" fill="#9ca3af" opacity="0.45"/>
+  <text x="20" y="16" font-size="9.5" fill="#9ca3af">chain A</text>
+  <rect x="18" y="104" width="244" height="7" rx="3" fill="#9ca3af" opacity="0.25"/>
+  <text x="20" y="124" font-size="9.5" fill="#9ca3af">chain B</text>
+  <circle cx="140" cy="64" r="11" fill="#dc2626"/>
+  <text x="140" y="67" text-anchor="middle" font-size="9" fill="#fff">Ca</text>
+  <g stroke="#9ca3af" stroke-width="0.8" opacity="0.6">
+    <line x1="86" y1="33" x2="132" y2="58"/><line x1="196" y1="33" x2="149" y2="58"/><line x1="108" y1="98" x2="133" y2="72"/>
+  </g>
+  <circle cx="80" cy="33" r="5" fill="#2563eb"/><circle cx="90" cy="35" r="4" fill="#d97706"/><circle cx="86" cy="27" r="4" fill="#059669"/><circle cx="96" cy="29" r="4" fill="#7c3aed"/>
+  <text x="84" y="49" text-anchor="middle" font-size="9" fill="#4b5563">Asp20·A–D</text>
+  <circle cx="192" cy="33" r="5" fill="#2563eb"/><circle cx="202" cy="35" r="4" fill="#d97706"/><circle cx="198" cy="27" r="4" fill="#059669"/><circle cx="208" cy="29" r="4" fill="#7c3aed"/>
+  <text x="198" y="49" text-anchor="middle" font-size="9" fill="#4b5563">Glu31·A–D</text>
+  <circle cx="104" cy="98" r="5" fill="#2563eb"/><circle cx="114" cy="96" r="4" fill="#d97706"/><circle cx="110" cy="104" r="4" fill="#059669"/><circle cx="120" cy="100" r="4" fill="#7c3aed"/>
+  <text x="110" y="118" text-anchor="middle" font-size="9" fill="#4b5563">Asp55(B)·A–D</text>
+</svg>
+
+**A coordination sphere that spans chains and includes the metal.**
+:::
+
+*Current mmCIF.* The coordinating residues carry altlocs A–D across both chains,
+and `struct_conn` `metalc` records are altloc-specific (each bond names
+`ptnr1_label_alt_id`), so the per-alternate coordination distances are captured —
+real, and present in 5E1N.
+
+```
+# atom comp chain seq alt    occ
+OD1  ASP  A     20  A..D   ...    # chain A, four alternates
+OE1  GLU  A     31  A..D   ...    # chain A
+OD1  ASP  B     55  A..D   ...    # chain B
+CA   CA   .     201 .      1.00   # the metal: one position
+# struct_conn metalc: ASP20.A-CA, ASP20.B-CA, ...  (one bond per altloc)
+```
+
+What it cannot do: state which cross-chain combination (chain-A altA + chain-B
+altA + a metal position) is one physical coordination sphere; and the metal is
+usually one full-occupancy atom even though its ligands have four alternates, so
+the letter convention silently pairs a single metal with four alternative spheres.
+Lost: the cross-chain network identity and the metal-position coupling — the
+consistent spheres cannot be enumerated from the file.
+
+*Stephanie's proposal.* A heterogeneity state spans chains and the metal, so the
+coordination set is one named object.
+
+```
+_pdbx_heterogeneity_hierarchy
+ id        parent  details
+ base      .       core (both chains)
+ sphere_a  base    coordination set A
+ sphere_b  base    coordination set B
+
+_pdbx_state_coexistence
+ rule  heterogeneity_id  heterogeneity_ids
+ NOT   sphere_a          sphere_b
+
+# atom_site.pdbx_heterogeneity_id: chnA Asp20, chnA Glu31, chnB Asp55, and CA
+#                                  -> tagged sphere_a / sphere_b
+```
+
+If metal binding itself nests (present, then arrangement), the hierarchy carries
+that too.
+
+*Martin's simplification.* `_pdbx_alt_groups` already carries `auth_asym_id`, so a
+network can span chains directly.
+
+```
+_pdbx_alt_groups
+ alt_group_id  auth_asym_id  auth_seq_id_start  auth_seq_id_end  label_alt_id
+ sphere_a      A             20                 20               A
+ sphere_a      A             31                 31               A
+ sphere_a      B             55                 55               A
+ sphere_a      B             201                201              A    # the metal
+```
+
+Its limits cluster at exactly this case: the metal must be split into altlocs to
+join a group (it currently has one position); the coordination bonds remain in
+`struct_conn`, so the membership loop and the `struct_conn` altlocs must be kept
+consistent by hand; and branchy coordination is where "is a single `NOT` enough?"
+is genuinely stress-tested — several geometric exclusions may need several edges.
+
+### Reading the progression
+
+The threshold is case B. At A the current format is complete and both proposals
+add nothing. From B onward the missing fact is always the same — which alternates
+across the structure co-occur — and the two proposals trade off the same way:
+Stephanie's puts an explicit `pdbx_heterogeneity_id` on every atom (most
+expressive, heaviest for software), Martin's defines states by residue range in
+`_pdbx_alt_groups` and reuses the altloc letters (lightest for software, blind
+inside a residue and to the metal's single position). Case D is where both meet
+the real frontier: multi-chain works in both because the grouping loops carry
+`auth_asym_id`, but coordination forces the metal and the bond records into the
+same consistency problem the letter convention was hiding all along.
+
