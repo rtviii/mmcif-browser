@@ -113,6 +113,15 @@ export function buildLineToRowFull(doc: CifDocument, span: LoopSpan, rowCount: n
   return lineToRow;
 }
 
+// Invert buildLineToRowFull: parsed row index -> every physical line it occupies, ascending.
+// Used to mark/highlight a whole record in the source when something outside the panel selects it.
+export function buildRowToLines(doc: CifDocument, span: LoopSpan, rowCount: number): number[][] {
+  const out: number[][] = Array.from({ length: rowCount }, () => []);
+  for (const [line, row] of buildLineToRowFull(doc, span, rowCount)) out[row]?.push(line);
+  for (const lines of out) lines.sort((a, b) => a - b);
+  return out;
+}
+
 // First physical line of each data row. Fast path when the loop is one line per row;
 // otherwise accumulate values (a ;...; block counts as one value) until a full row is seen.
 function rowStarts(doc: CifDocument, span: LoopSpan, rowCount: number): number[] {

@@ -39,7 +39,7 @@ import {
   executeQuery,
 } from "./queries";
 import { setSelectionWiggleFalloff } from "./wiggle-falloff";
-import { viewerSpec } from "./spec";
+import { proposalViewerSpec, viewerSpec } from "./spec";
 import {
   BALL_AND_STICK_COMPONENTS,
   DEFAULT_VIEW,
@@ -98,33 +98,41 @@ export class MolstarViewer {
   // every bond stays drawn and nothing floats. Kept here to recompute those layers on each state step.
   private hetNetworks: HetVizNetwork[] = [];
 
-  async init(container: HTMLElement, spec: PluginUISpec = viewerSpec): Promise<void> {
+  // `minimal` (proposal explainer figures): use the chrome-free spec (no viewport button strip),
+  // hide the camera axes gizmo, and pick at atom granularity so hovering highlights one atom rather
+  // than the whole residue. The default (main inspector) keeps Mol*'s standard chrome and residue picking.
+  async init(container: HTMLElement, opts: { minimal?: boolean } = {}): Promise<void> {
     if (this.ctx) return;
     if (this.initPromise) return this.initPromise;
-    this.initPromise = this.doInit(container, spec);
+    const spec = opts.minimal ? proposalViewerSpec : viewerSpec;
+    this.initPromise = this.doInit(container, spec, !!opts.minimal);
     return this.initPromise;
   }
 
-  private async doInit(container: HTMLElement, spec: PluginUISpec): Promise<void> {
+  private async doInit(container: HTMLElement, spec: PluginUISpec, minimal: boolean): Promise<void> {
     this.ctx = await createPluginUI({ target: container, spec, render: renderReact18 });
     // Register our custom alt-loc color theme so `color: 'alt-loc'` resolves on representations.
     if (!this.ctx.representation.structure.themes.colorThemeRegistry.has(AltLocColorThemeProvider)) {
       this.ctx.representation.structure.themes.colorThemeRegistry.add(AltLocColorThemeProvider);
     }
-    this.applyDefaultStyling();
+    this.applyDefaultStyling(minimal);
+    if (minimal) {
+      // Hover/click highlight one atom, not the enclosing residue.
+      this.ctx.managers.interactivity.setProps({ granularity: "element" });
+    }
   }
 
-  private applyDefaultStyling(): void {
+  private applyDefaultStyling(minimal = false): void {
     if (!this.ctx) return;
     // Illustrative look (à la fend_tubulinxyz): white canvas + outline + ambient occlusion,
     // and a flat (unlit) material on every representation.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.ctx.canvas3d?.setProps({
       postprocessing: STYLIZED_POSTPROCESSING,
       renderer: { backgroundColor: WHITE_BACKGROUND },
       // Never let an implicit scene change (e.g. adding a representation) auto-refit the camera.
       // The camera only moves on the explicit resetCamera() after load and focusLoci() on pin.
-      camera: { manualReset: true },
+      // For minimal figures, also drop the bottom-left axes gizmo.
+      camera: { manualReset: true, ...(minimal ? { helper: { axes: { name: "off", params: {} } } } : {}) },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
     this.ctx.managers.structure.component.setOptions({

@@ -14,6 +14,7 @@ export default function MolstarViewer({
   view,
   tlsGroups,
   hetNetworks,
+  minimal,
   onReady,
   onLoaded,
 }: {
@@ -22,11 +23,13 @@ export default function MolstarViewer({
   view?: StructureView;
   tlsGroups?: TlsGroup[] | null;
   hetNetworks?: HetVizNetwork[] | null;
+  /** Chrome-free look for inline figures: no viewport buttons, no axes gizmo, atom-level picking. */
+  minimal?: boolean;
   onReady?: (viewer: MolstarViewerInstance | null) => void;
   onLoaded?: (info: { modelCount: number }) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { viewer, ready } = useMolstarViewer(containerRef);
+  const { viewer, ready } = useMolstarViewer(containerRef, { minimal });
 
   // Keep latest onLoaded without making it a load-effect dependency (it changes identity each render).
   const onLoadedRef = useRef(onLoaded);
@@ -37,6 +40,27 @@ export default function MolstarViewer({
   useEffect(() => {
     onReady?.(ready ? viewer : null);
   }, [ready, viewer, onReady]);
+
+  // The container's size is not always driven by a window resize — a flex/grid parent can change it
+  // on its own (the proposal figures size the viewer off the figure row). Mol* does not observe its
+  // canvas, so without this the scene stays laid out for the old box.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !viewer || !ready) return;
+    let raf: number | null = null;
+    const ro = new ResizeObserver(() => {
+      if (raf != null) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        viewer.handleResize();
+      });
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      if (raf != null) cancelAnimationFrame(raf);
+    };
+  }, [viewer, ready]);
 
   useEffect(() => {
     if (!viewer || !ready || data == null) return;

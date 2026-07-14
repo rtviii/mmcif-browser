@@ -13,6 +13,7 @@ import { SettingsMenu } from "./cif/SettingsMenu";
 const pages = [
   { href: "/", label: "Inspector" },
   { href: "/dictionary", label: "Dictionary" },
+  { href: "/proposal", label: "Proposal" },
 ];
 
 export default function NavBar() {

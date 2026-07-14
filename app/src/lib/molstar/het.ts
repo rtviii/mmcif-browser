@@ -54,10 +54,39 @@ export const HET_PALETTE = [
   0x4363d8, 0xe6194b, 0x3cb44b, 0xf58231, 0x911eb4, 0x42d4f4, 0xf032e6, 0xbfef45, 0xfabed4, 0x469990,
 ];
 
+// The same idea, desaturated, for the proposal figures: a network's colour is the ONLY chroma in
+// that panel (the code is monochrome), so the set has to stay distinguishable in 3D while reading
+// as quiet against white. Kept separate from HET_PALETTE so the Inspector is unaffected.
+export const HET_PALETTE_MUTED = [
+  0x5b7fa6, 0xa8595c, 0x6f8f6a, 0xb2874f, 0x7d6b93, 0x4f8a8b, 0x9c6f8e, 0x8a8a5c, 0xa87f7f, 0x5f7d7d,
+];
+
 const norm = (s: string | undefined | null) => {
   const v = (s ?? "").trim();
   return v === "" || v === "." || v === "?" ? "" : v;
 };
+
+// One atom_site row, reduced to the keys a membership selector matches on.
+export interface AtomKey {
+  chain: string;
+  seq: number;
+  altId: string;
+  atomId: string;
+}
+
+// Does an atom_site row fall inside a membership selector? This is the single definition of
+// network membership: the occupancy scan below, the 3D query builder (lib/molstar/queries.ts)
+// and the source-line index (lib/molstar/het-lines.ts) must all agree, or the code panel would
+// highlight atoms the viewer does not colour. An atomId of null selects the whole residue range.
+export function matchesSelector(m: AltSelector, a: AtomKey): boolean {
+  return (
+    a.chain === m.chain &&
+    a.seq >= m.seqStart &&
+    a.seq <= m.seqEnd &&
+    a.altId === m.altId &&
+    (!m.atomId || a.atomId === m.atomId)
+  );
+}
 
 // Parse the heterogeneity model from a parsed CIF file (the `raw` of ParsedCif). Returns null if the
 // file carries no _pdbx_alt_groups category.
@@ -155,11 +184,15 @@ function assignOccupancies(
     let occ: number | null = null;
     for (const m of net.members) {
       for (let r = 0; r < n; r++) {
-        if (norm(aChain?.str(r)) !== m.chain) continue;
         const seq = aSeq?.int(r);
-        if (seq == null || seq < m.seqStart || seq > m.seqEnd) continue;
-        if (norm(aAlt?.str(r)) !== m.altId) continue;
-        if (m.atomId && norm(aAtom?.str(r)) !== m.atomId) continue;
+        if (seq == null || Number.isNaN(seq)) continue;
+        const key: AtomKey = {
+          chain: norm(aChain?.str(r)),
+          seq,
+          altId: norm(aAlt?.str(r)),
+          atomId: norm(aAtom?.str(r)),
+        };
+        if (!matchesSelector(m, key)) continue;
         occ = aOcc.float(r);
         break;
       }
@@ -174,9 +207,27 @@ export function selectorsFor(model: HetModel, networkId: string): AltSelector[] 
   return model.byId.get(networkId)?.members ?? [];
 }
 
+// Is a coexistence group INCOMPLETE — i.e. is "none of them" a legal choice? A group is complete
+// when its members' occupancies sum to their parent's occupancy (1 at the implicit base root):
+// then exactly one member is always chosen. When they sum to less, the remainder is a state in
+// which none of them is present — a partially-occupied water, or a pocket that is empty half the
+// time — and that state has to be enumerable, or the network would appear in no legal state at all.
+// Occupancies come straight off atom_site, so this needs no extra annotation to work out.
+const SUM_TOL = 0.02;
+
+function groupIsIncomplete(members: HetNetwork[], parentOcc: number): boolean {
+  let sum = 0;
+  for (const n of members) {
+    if (n.occupancy == null) return false; // unknown occupancy: assume the group is complete
+    sum += n.occupancy;
+  }
+  return sum < parentOcc - SUM_TOL;
+}
+
 // Enumerate the legal whole-molecule states from the hierarchy. Within one coexistence group under a
-// parent exactly one network is chosen (mutually exclusive); independent groups under the same parent
-// multiply (cartesian product); a child group opens only if its parent network is chosen (nesting).
+// parent at most one network is chosen (mutually exclusive) — exactly one if the group is complete,
+// possibly none if it is not; independent groups under the same parent multiply (cartesian product);
+// a child group opens only if its parent network is chosen (nesting).
 // NOT exclusions then prune any state containing both members of a forbidden pair.
 function enumerateStates(
   networks: HetNetwork[],
@@ -192,6 +243,7 @@ function enumerateStates(
   // All combinations of choices for the subtree under `parentId` being active.
   function enumerate(parentId: string | null, seen: Set<string>): string[][] {
     const kids = childrenOf.get(parentId) ?? [];
+    const parentOcc = (parentId ? byId.get(parentId)?.occupancy : 1) ?? 1;
     // group children by coexistence group (a null group is its own singleton)
     const groups = new Map<string, HetNetwork[]>();
     for (const n of kids) {
@@ -207,6 +259,7 @@ function enumerateStates(
         for (const s of sub) groupOptions.push([n.id, ...s]);
       }
       if (groupOptions.length === 0) continue;
+      if (groupIsIncomplete(candidates, parentOcc)) groupOptions.push([]); // "none of them"
       combos = combos.flatMap((c) => groupOptions.map((go) => [...c, ...go]));
     }
     return combos;
@@ -219,17 +272,46 @@ function enumerateStates(
     return !forbidden.some((e) => s.has(e.a) && s.has(e.b));
   });
 
+  // Every coexistence group, so a state can be charged for the groups it leaves EMPTY as well as
+  // the ones it fills. Occupancies in atom_site are absolute (a fraction of all copies), which is
+  // why a chosen leaf contributes its occupancy directly rather than a conditional one.
+  const allGroups: { parentId: string | null; members: HetNetwork[]; parentOcc: number }[] = [];
+  for (const [parentId, kids] of childrenOf) {
+    const parentOcc = (parentId ? byId.get(parentId)?.occupancy : 1) ?? 1;
+    const grouped = new Map<string, HetNetwork[]>();
+    for (const n of kids) {
+      const g = n.coexistenceGroupId ?? `:${n.id}`;
+      (grouped.get(g) ?? grouped.set(g, []).get(g)!).push(n);
+    }
+    for (const members of grouped.values()) allGroups.push({ parentId, members, parentOcc });
+  }
+
   return legal.map((set, i) => {
-    // probability = product of occupancies of chosen networks with no chosen child in this state
+    const chosen = new Set(set);
+    // The deepest chosen networks: an ancestor's occupancy is already accounted for by its child.
     const leaves = set.filter((id) => !set.some((other) => byId.get(other)?.parentId === id));
-    let p: number | null = leaves.length > 0 ? 1 : null;
+    let p: number | null = 1;
     for (const id of leaves) {
       const occ = byId.get(id)?.occupancy;
       if (occ == null) {
         p = null;
         break;
       }
-      p = (p ?? 1) * occ;
+      p *= occ;
+    }
+    // A group that is open (its parent is chosen, or it hangs off base) but has no member chosen
+    // means "none of these is present" — a real outcome with a real probability, and the state is
+    // not complete without it. This is what makes "ligand, bottom pocket empty" come out at 0.25
+    // rather than 0.50.
+    if (p != null) {
+      for (const g of allGroups) {
+        if (g.parentId != null && !chosen.has(g.parentId)) continue; // group not open in this state
+        if (g.members.some((m) => chosen.has(m.id))) continue; // something was chosen
+        if (!groupIsIncomplete(g.members, g.parentOcc)) continue;
+        let sum = 0;
+        for (const m of g.members) sum += m.occupancy ?? 0;
+        p *= g.parentOcc - sum;
+      }
     }
     return {
       id: `state ${i + 1}`,
