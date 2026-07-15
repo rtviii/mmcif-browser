@@ -81,10 +81,12 @@ export const CifPanel = forwardRef<CifPanelHandle, CifPanelProps>(function CifPa
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pop, openPopover, closePopover] = usePopover();
 
-  // Everything at/after `truncateBefore` is dropped, along with the blank/# tail before it.
+  // Everything at/after `truncateBefore` is dropped, along with the blank/# tail before it. The
+  // marker must START the line: these files discuss the categories in their header comments, and a
+  // substring match would cut at the prose instead of at the declaration.
   const cutoff = useMemo(() => {
     if (!doc || !truncateBefore) return Infinity;
-    const hit = doc.lines.findIndex((l) => l.text.includes(truncateBefore));
+    const hit = doc.lines.findIndex((l) => l.text.trimStart().startsWith(truncateBefore));
     if (hit < 0) return Infinity;
     let end = hit;
     while (end > 0 && BLANK_TAIL.test(doc.lines[end - 1].text)) end--;
@@ -149,7 +151,7 @@ export const CifPanel = forwardRef<CifPanelHandle, CifPanelProps>(function CifPa
 
       {/* the one and only scroll container — both axes. A nested overflow here would become the
           containing block for the sticky loop headers and silently break them. */}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
+      <div ref={scrollRef} className="no-scrollbar min-h-0 flex-1 overflow-auto">
         {!doc || !cif ? (
           <div className="px-3 py-2 font-mono text-[11px] text-slate-300">loading…</div>
         ) : table && molFile ? (

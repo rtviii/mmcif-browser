@@ -1,105 +1,67 @@
 # Handoff — heterogeneity proposal page
 
-Branch `grouped_occupancy_proposal`. Everything below is uncommitted. `npx tsc --noEmit` and
-`npx next build` are clean; `check_examples.py` passes 44/44.
+Branch `grouped_occupancy_proposal`. `npx tsc --noEmit` and `npx next build` are clean;
+`check_examples.py` passes 44/44.
 
-The page has now been looked at in a browser. Direction is right; the list below is what came back.
-**Start here — everything in this section is the next session's job.**
+The punch list from the first in-browser read is **done** (see below). The page has *not* been looked
+at again since those changes landed. What is left is substantive, not cosmetic — it is in
+**Still open**, and that is where the next session should start.
 
 ---
 
-# NEXT SESSION — the work list
+# Done — the in-browser punch list
 
-## 1. BUG: section 04 renders no file text (fix first, it is one line)
+All eight items, plus one bug the list had missed.
 
-The figure titled *"the file today — the correlation is unwritten"* shows the header comments and
-then nothing. The `_atom_site` loop is missing entirely.
+**The section 04 truncation bug.** `CifPanel`'s `truncateBefore` cutoff matched with
+`line.text.includes(marker)`, and `5E1N_ca_site.cif` line 18 is a *comment* mentioning
+`_pdbx_alt_groups` in prose. That comment was the first hit, so the cutoff landed at line 18 and
+truncated the entire `_atom_site` loop — the figure rendered **0** atom rows instead of 272. The
+matcher now requires the marker to begin the trimmed line, so it lands on the real declaration at
+line 323.
 
-Cause: `StageFigure` passes `truncateBefore="_pdbx_alt_groups"`, and `CifPanel`'s cutoff does
+**The dead example menu (was not on the list).** Commit `a3c2b55` deleted the six old synthetic het
+CIFs but left their entries in `lib/molstar/examples.ts`, so every one of them fetched a 404. The
+group now points at the seven annotated carved files, and its comment no longer claims they are
+synthetic and hand-built.
 
-```ts
-const hit = doc.lines.findIndex((l) => l.text.includes(truncateBefore));
-```
+**Layout.** Figures are collapsed by default and mount Mol* only on expand — all eight plugins used
+to instantiate on page load, which was the page's whole cost. Collapsed, a figure sits in the prose
+column as a title bar; expanded, it goes full-bleed. The `vw`-based breakout is gone, replaced by a
+`.doc-grid` / `.bleed` pair in `globals.css`: prose sits in a centred content column, a `.bleed` child
+spans the full width, and everything resolves against the grid's own width. That is what made the
+contents rail possible — a `vw` breakout is only centred while its container is centred in the
+viewport, so a sidebar would have pushed every figure off to the right. The rail lives outside the
+scroll container and needs no sticky positioning; below `xl` the old horizontal strip returns. The
+example glossary moved into the rail as a `<details>`, so it can be consulted while reading.
 
-`ex_ef_hand.cif` **line 18 is a comment** — "The `_pdbx_alt_groups` / `_pdbx_heterogeneity_hierarchy`
-rows below write it down." That comment is the first `includes` hit, so the cutoff lands at line 18
-and truncates the whole file, including the coordinates. The real category declaration is at line
-323.
+The one constraint the grid imposes, and the reason `Section` no longer wraps its children in a
+styling div: **a figure must be a direct child of a `.doc-grid`.** A wrapper element becomes the grid
+child, and the figure inside it can never escape the content column.
 
-Fix in `CifPanel.tsx`, the `cutoff` useMemo: match only a line whose **trimmed text starts with** the
-marker, so a mention inside a comment cannot trigger it:
+**Also.** The control strip moved out of the 440px viewer column to below the whole figure and now
+wraps, so `5E1N_ca_site`'s six networks and eight states stop being silently clipped. Unannotated
+figures explain their empty strip via a `note` prop instead of just lacking one. `.no-scrollbar` on
+the source panel. Body type 13.5px in a 960px column.
 
-```ts
-const hit = doc.lines.findIndex((l) => l.text.trimStart().startsWith(truncateBefore));
-```
+**The rename.** `ex_*` → PDB-anchored throughout: filename, `data_` block id, figure title, glossary,
+and both scripts. `carve_examples.py`'s functions are `minimal()` / `ca_site()` / … since
+`def 1EJG_minimal()` is not valid Python; the entry id lives in the file and block names, which is
+where it is actually read.
 
-Then re-check section 04 actually shows the atom rows. (Do not "fix" this by rewording the CIF
-comment — the matcher is the thing that is wrong.)
-
-## 2. Not a bug, but confusing: section 04 has no network/state chips
-
-That figure is deliberately `het={false}` — it is "the file as it exists today", which has no
-annotation, so there is nothing to make chips out of. The 3D is coloured by *altloc letter*
-(`colorTheme: "alt-loc"`), which is why colours appear with no legend under them. This reads as
-broken even though it is intentional. Add a one-line note in the control-strip slot for the
-unannotated case, e.g. *"no heterogeneity annotation in this file — colour is the raw altloc
-letter"*, so the empty strip is explained rather than absent.
-
-## 3. Chips get cut off
-
-`HetControls` lives in the right-hand column, which is `lg:w-[440px]`. `ChipRow` is
-`whitespace-nowrap overflow-x-auto`, so `ex_ef_hand`'s six networks and eight states run off the
-right edge and are silently clipped (see: `seg2_B` half-visible).
-
-Move the control strip **out of the viewer column and under the whole figure**, spanning code panel
-+ viewer, and let it wrap. It has the full 94vw to work with there; nothing needs to be clipped. Keep
-the labelled-row layout (it is the part that works).
-
-## 4. Scrollbars in the file panel
-
-Remove both. `globals.css` already has `.no-scrollbar` (used by the Inspector's source viewport) —
-apply it to `CifPanel`'s scroll container. Scrolling still works, the bars just stop being drawn.
-
-## 5. Collapsible figures
-
-The full-bleed figures break the reading flow. Make each collapse to its title bar; clicking expands
-it to what it is now. **Default collapsed.**
-
-Do the Mol* mount lazily as part of this — today all eight viewers instantiate on page load, which is
-the page's main cost. Collapsed-by-default plus mount-on-expand fixes the reading flow and the load
-time in one move.
-
-## 6. Rename the examples — informative, PDB-anchored, used consistently
-
-Current names (`ex_ef_hand`, `ex_subresidue`, `ex_dag`, …) are slick rather than informative, and
-the on-page figure titles are long prose that does not match the filenames. Give each one name that
-carries the entry id, and use that *same* name in the filename, the figure title, the glossary, and
-any prose reference. Something in the shape of:
-
-| now | suggested |
+| old | new |
 |---|---|
-| `ex_minimal` | `1EJG_minimal` |
-| `ex_rotamer` | `1EJG_rotamer` |
-| `ex_ef_hand` | `5E1N_ca_site` |
-| `ex_subresidue` | `5E1N_gln8_split` |
-| `ex_nesting` / `_occ` | `7HHS_apo_bound` / `7HHS_apo_bound_occ` |
-| `ex_exclusion` | `5E1N_arg74_clash` |
-| `ex_dag` | `constructed_two_pocket` |
+| `1EJG_minimal` / `1EJG_rotamer` | `1EJG_minimal` / `1EJG_rotamer` |
+| `5E1N_ca_site` | `5E1N_ca_site` |
+| `5E1N_gln8_split` | `5E1N_gln8_split` |
+| `7HHS_apo_bound` / `_occ` | `7HHS_apo_bound` / `7HHS_apo_bound_occ` |
+| `5E1N_arg74_clash` | `5E1N_arg74_clash` |
+| `constructed_two_pocket` | `constructed_two_pocket` |
 
-Rename in `carve_examples.py` (the `write_cif` calls), `check_examples.py`, and the `fileUrl` +
-`codeTitle` props in `ProposalPage.tsx`. Same treatment for the section headings — make them
-informative, not clever.
+The files were regenerated by `carve_examples.py`, not moved, so the `data_` headers are authoritative;
+atom and line counts are unchanged from the old files and `check_examples.py` still passes 44/44.
 
-## 7. Contents → a real sidebar
-
-Turn the horizontal contents strip into a sticky left sidebar with navigable links, and put the
-example glossary at the bottom of that sidebar as a collapsible element (rather than as the appendix
-section it is now).
-
-## 8. Typography: wider still, smaller still
-
-`article` is `max-w-[880px]`, body is `text-[14px] leading-[1.75]`. Go wider and smaller again. Note
-the figures are already full-bleed (`w-[94vw]`) and unaffected by the prose column width.
+Section headings were deliberately left alone.
 
 ---
 
@@ -120,12 +82,12 @@ prose was contradicted by its own coordinates.
 
 | file | entry | what it carries |
 |---|---|---|
-| `ex_minimal` / `ex_rotamer` | 1EJG | the baseline; an isolated rotamer (Arg10, 0.67/0.33) |
-| `ex_ef_hand` | 5E1N | the Ca-203 EF-hand: two correlated segments with **different letter sets** ({B,D} vs {A,B,C,D}), each summing to 1.00, both coordinating the same ion. Network definitions are the working group's own, from `source_docs/5E1N_hierarchy_20250423.cif`, clipped to the carved window. Carries the deposited altloc-specific `metalc` bonds. Used twice: unannotated (§04) and annotated (§06). |
-| `ex_subresidue` | 5E1N | Gln8: its amide H belongs to the residues 6–7 network, its side chain to its own — **same residue, same letter A, two networks**. There are 28 such (residue, altloc) pairs in the annotated 5E1N. This is the real `label_atom_id` case. |
-| `ex_nesting` / `_occ` | 7HHS | apo 0.78 / bound 0.22, two exclusive poses at 0.13 and 0.09. **0.13 + 0.09 = 0.22 = occ(bound)** — the nesting rule, in deposited numbers. |
-| `ex_exclusion` | 5E1N | the one real `NOT`: Arg74 alt B lands 2.14 Å from water 468. Alts C and D clear it by 3.97/4.80 Å, so the exclusion is alternate-specific and cannot be inferred from the tree. |
-| `ex_dag` | **constructed** | the two-pocket graph. No deposited counterpart exists (it is a constructed case in the source deck too). Labelled as constructed on the page and in the appendix. |
+| `1EJG_minimal` / `1EJG_rotamer` | 1EJG | the baseline; an isolated rotamer (Arg10, 0.67/0.33) |
+| `5E1N_ca_site` | 5E1N | the Ca-203 EF-hand: two correlated segments with **different letter sets** ({B,D} vs {A,B,C,D}), each summing to 1.00, both coordinating the same ion. Network definitions are the working group's own, from `source_docs/5E1N_hierarchy_20250423.cif`, clipped to the carved window. Carries the deposited altloc-specific `metalc` bonds. Used twice: unannotated (§04) and annotated (§06). |
+| `5E1N_gln8_split` | 5E1N | Gln8: its amide H belongs to the residues 6–7 network, its side chain to its own — **same residue, same letter A, two networks**. There are 28 such (residue, altloc) pairs in the annotated 5E1N. This is the real `label_atom_id` case. |
+| `7HHS_apo_bound` / `_occ` | 7HHS | apo 0.78 / bound 0.22, two exclusive poses at 0.13 and 0.09. **0.13 + 0.09 = 0.22 = occ(bound)** — the nesting rule, in deposited numbers. |
+| `5E1N_arg74_clash` | 5E1N | the one real `NOT`: Arg74 alt B lands 2.14 Å from water 468. Alts C and D clear it by 3.97/4.80 Å, so the exclusion is alternate-specific and cannot be inferred from the tree. |
+| `constructed_two_pocket` | **constructed** | the two-pocket graph. No deposited counterpart exists (it is a constructed case in the source deck too). Labelled as constructed on the page and in the appendix. |
 
 `check_examples.py` re-measures the files and asserts every geometric claim the page makes — run it
 after any change to the examples. This is the check that was missing the first time.
@@ -135,7 +97,7 @@ after any change to the examples. This is the check that was missing the first t
 Both were surfaced by the real data and would have made the new examples render wrongly:
 
 1. **Incomplete coexistence groups.** The state enumerator forced every group to choose exactly one
-   member, so the partially-occupied water in `ex_exclusion` (0.54) was treated as always present and
+   member, so the partially-occupied water in `5E1N_arg74_clash` (0.54) was treated as always present and
    `arg74_B` appeared in *no* legal state. A group whose occupancies sum to less than its parent's is
    now incomplete, and "none of them" is a legal choice. Derived from occupancies alone, so it needs
    no extra annotation.
@@ -150,7 +112,7 @@ per-atom column on the coordinate table — and uses the schema `.name / .parent
 rather than this proposal's `.alt_group_id / .coexistence_group_id / .parent_alt_groups_id`. The
 existing prototype therefore takes exactly the per-atom route this proposal's central principle
 rejects. The page does not mention this (deliberately, for this pass). It is the most obvious
-objection anyone in the working group will raise. The good news: `ex_subresidue` is precisely the
+objection anyone in the working group will raise. The good news: `5E1N_gln8_split` is precisely the
 case that *motivated* their column, so the argument for `label_atom_id` as the non-invasive
 equivalent is already made on the page — it just is not stated against the prototype.
 
@@ -165,6 +127,12 @@ needed no coexistence table at all. Worth asking for.
 
 ## Not verified
 
-The page has **not** been driven in a browser. Typecheck and production build are clean, and the het
-parser plus the new network→line index were exercised offline against every example file, but the
-layout, the sticky headers and the chip→line snapping have not been looked at.
+The changes above have **not** been driven in a browser. Typecheck and production build are clean, and
+the truncation fix was proved against the real file offline (the old matcher kept 0 of
+`5E1N_ca_site`'s 272 atom rows; the new one keeps all 272). What has not been looked at:
+
+- the collapsed → expanded transition, and whether Mol* sizes its canvas correctly when it mounts into
+  a box that has just appeared (there is a `ResizeObserver` in `MolstarViewer` for exactly this, but it
+  has not been exercised on a freshly-revealed container);
+- the `.doc-grid` breakout at the `xl` boundary, where the contents rail appears;
+- chip → source-line snapping, which still has not been watched once.

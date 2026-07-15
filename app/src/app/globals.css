@@ -28,6 +28,29 @@ body {
   display: none;
 }
 
+/* Full-bleed document grid (the /proposal page). Prose sits in the centred `content` column; a
+   child marked .bleed spans the whole width instead. Everything resolves against the grid's own
+   width, so this is indifferent to a sidebar beside it — unlike a vw-based breakout, which is only
+   centred while its container is centred in the viewport.
+
+   Nesting: a <section> is itself .bleed .doc-grid, so it spans full width and re-establishes the
+   same content column at the same width. Its prose therefore stays aligned with the article's,
+   while a <figure> inside it can still reach the edges. The catch is that a figure must be a DIRECT
+   child of a doc-grid — an intermediate wrapper traps it in the content column. */
+.doc-grid {
+  display: grid;
+  grid-template-columns:
+    [full-start] minmax(1.5rem, 1fr)
+    [content-start] minmax(0, var(--doc-w, 960px)) [content-end]
+    minmax(1.5rem, 1fr) [full-end];
+}
+.doc-grid > * {
+  grid-column: content;
+}
+.doc-grid > .bleed {
+  grid-column: full;
+}
+
 /* React Flow attribution / theming tweaks */
 .react-flow__controls-button {
   background: #27272a;

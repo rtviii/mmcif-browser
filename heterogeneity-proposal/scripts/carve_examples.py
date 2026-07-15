@@ -179,11 +179,11 @@ def alt_groups(members: list[tuple]) -> str:
 
 # --------------------------------------------------------------------------- examples
 
-def ex_minimal():
+def minimal():
     """1EJG residues 14-16: a complete, valid file with no heterogeneity at all."""
     atoms = carve("1EJG", lambda r: in_range(r, "A", 14, 16))
     write_cif(
-        "ex_minimal.cif", "ex_minimal",
+        "1EJG_minimal.cif", "1EJG_minimal",
         """
 Crambin (PDB 1EJG, 0.54 A), residues Asn14-Val15-Cys16 of chain A.
 Coordinates are the deposited ones, copied verbatim; hydrogens omitted.
@@ -194,11 +194,11 @@ Every later example is a delta against this.
         """, atoms)
 
 
-def ex_rotamer():
+def rotamer():
     """1EJG Arg10: a pure side-chain rotamer, single-conformer neighbours."""
     atoms = carve("1EJG", lambda r: in_range(r, "A", 9, 11))
     write_cif(
-        "ex_rotamer.cif", "ex_rotamer",
+        "1EJG_rotamer.cif", "1EJG_rotamer",
         """
 Crambin (PDB 1EJG), residues Ala9-Arg10-Ser11 of chain A. Deposited coordinates, H omitted.
 
@@ -212,7 +212,7 @@ completely. No extension is needed, and none of the proposed categories appear h
         """, atoms)
 
 
-def ex_ef_hand():
+def ca_site():
     """5E1N calcium site: two correlated multi-residue networks + the metal.
 
     Network definitions are the working group's own, from 5E1N_hierarchy_20250423.cif,
@@ -267,7 +267,7 @@ def ex_ef_hand():
     conn = fmt_loop("struct_conn", conn_fields, conn_rows)
 
     write_cif(
-        "ex_ef_hand.cif", "ex_ef_hand",
+        "5E1N_ca_site.cif", "5E1N_ca_site",
         """
 Calmodulin (PDB 5E1N, atomic resolution), the EF-hand loop around calcium ion CA 203:
 residues 19-31 of chain A, the ion, and its coordinating water. Deposited coordinates,
@@ -294,7 +294,7 @@ Thr26's carbonyl O reaches the ion at 2.33 / 2.45 / 2.65 / 2.10 A in alternates 
         """, atoms, alt_groups(members), hier, conn)
 
 
-def ex_subresidue():
+def gln8_split():
     """5E1N Gln8: two independent choices on one residue, REUSING the same altloc letters.
 
     Real, and the reason the reference annotation needed a per-atom column: residue 8's
@@ -331,7 +331,7 @@ def ex_subresidue():
         ["sc_B", "sidechain_8", "base"],
     ])
     write_cif(
-        "ex_subresidue.cif", "ex_subresidue",
+        "5E1N_gln8_split.cif", "5E1N_gln8_split",
         """
 Calmodulin (PDB 5E1N), residues Glu6-Glu7-Gln8 of chain A. Deposited coordinates, copied
 verbatim. Hydrogens are omitted EXCEPT Gln8's backbone amide H, which is the whole point.
@@ -403,7 +403,7 @@ The letter's guarantee is local; it is a hint, not a record.
 """
 
 
-def ex_nesting():
+def apo_bound():
     hier = fmt_loop("pdbx_heterogeneity_hierarchy", HIER_FIELDS, [
         ["base", ".", "."],
         ["apo", "pocket", "base"],
@@ -411,11 +411,11 @@ def ex_nesting():
         ["pose_1", "ligand_pose", "bound"],
         ["pose_2", "ligand_pose", "bound"],
     ])
-    write_cif("ex_nesting.cif", "ex_nesting", NESTING_HEADER,
+    write_cif("7HHS_apo_bound.cif", "7HHS_apo_bound", NESTING_HEADER,
               _hhs_atoms(), alt_groups(_hhs_members()), hier)
 
 
-def ex_nesting_occ():
+def apo_bound_occ():
     hier = fmt_loop("pdbx_heterogeneity_hierarchy", HIER_OCC_FIELDS, [
         ["base", ".", ".", ".", ".", "1.0", "."],
         ["apo", "pocket", "base", "complete", "refined", ".", "compositional"],
@@ -437,11 +437,11 @@ apo + bound = 1 is complete under the root. pose_1 + pose_2 = occupancy(bound) i
 under a refinable parent -- the nested case that no mainstream program fits today, recorded
 so that a pipeline can grow into it.
 """
-    write_cif("ex_nesting_occ.cif", "ex_nesting_occ", header,
+    write_cif("7HHS_apo_bound_occ.cif", "7HHS_apo_bound_occ", header,
               _hhs_atoms(), alt_groups(_hhs_members()), hier)
 
 
-def ex_exclusion():
+def arg74_clash():
     """5E1N Arg74 vs HOH 468: the one real NOT row in the working group's annotation."""
     keep = lambda r: (in_range(r, "A", 73, 75)
                       or (r["label_comp_id"] == "HOH" and r["auth_seq_id"] in ("468", "469")))
@@ -465,7 +465,7 @@ def ex_exclusion():
                     [["1", "NOT", "arg74_B", "wat468_E"]])
     assert "468" in present, "HOH 468 missing from carve"
     write_cif(
-        "ex_exclusion.cif", "ex_exclusion",
+        "5E1N_arg74_clash.cif", "5E1N_arg74_clash",
         """
 Calmodulin (PDB 5E1N), Arg74 and its neighbours, plus water 468. Deposited coordinates,
 copied verbatim; H omitted.
@@ -487,7 +487,7 @@ NOT-only. AND / OR were deliberately left out: they admit several readings.
 
 # --------------------------------------------------------------------------- constructed DAG
 
-def ex_dag():
+def two_pocket():
     """The two-pocket DAG. Constructed -- there is no deposited counterpart -- but with real
     chemistry: ethylene glycol (EDO) built to its ideal internal geometry, a phenol ring for
     the ligand, and every non-bonded contact between coexisting groups kept above 3.0 A.
@@ -571,7 +571,7 @@ def ex_dag():
         if placed:
             break
     if placed is None:
-        raise SystemExit("ex_dag: could not place the pockets clear of the scaffold")
+        raise SystemExit("constructed_two_pocket: could not place the pockets clear of the scaffold")
 
     atoms = list(scaffold) + placed
 
@@ -596,7 +596,7 @@ def ex_dag():
                      ["constraint_id", "alt_group_id", "coefficient"],
                      [["1", "EDO1", "1.0"], ["1", "EDO2", "-1.0"], ["1", "EDO3", "-1.0"]])
     write_cif(
-        "ex_dag.cif", "ex_dag",
+        "constructed_two_pocket.cif", "constructed_two_pocket",
         """
 CONSTRUCTED -- this is the only example on the page that is not deposited data. It is the
 working group's two-pocket case, which has no counterpart in the archive; it is a constructed
@@ -625,14 +625,14 @@ enforced = annotation -- written down and portable, though no mainstream program
 def main():
     os.makedirs(OUT, exist_ok=True)
     print("carving examples from deposited entries ->", OUT)
-    ex_minimal()
-    ex_rotamer()
-    ex_ef_hand()
-    ex_subresidue()
-    ex_nesting()
-    ex_nesting_occ()
-    ex_exclusion()
-    ex_dag()
+    minimal()
+    rotamer()
+    ca_site()
+    gln8_split()
+    apo_bound()
+    apo_bound_occ()
+    arg74_clash()
+    two_pocket()
 
 
 if __name__ == "__main__":

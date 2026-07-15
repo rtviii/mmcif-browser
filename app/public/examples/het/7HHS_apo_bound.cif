@@ -1,4 +1,4 @@
-data_ex_nesting_occ
+data_7HHS_apo_bound
 #
 # Fragment-screening entry PDB 7HHS: the ligand pocket -- residues 21-25 and 47-49 of chain A
 # plus both modelled poses of ligand A1A7O. Deposited coordinates, copied verbatim; H omitted.
@@ -28,19 +28,6 @@ data_ex_nesting_occ
 # Note finally that the ligand's letters (B, C) do not line up with the pocket's (A, B). "B" on
 # residue 201 and "B" on residue 22 are different physical states that happen to share a letter.
 # The letter's guarantee is local; it is a hint, not a record.
-#
-# Here the hierarchy also carries the occupancy SPECIFICATION -- the thing that survives in the
-# refinement program's keyword file but not in the deposited entry:
-#
-#   occupancy_completeness  complete: the group sums to its parent's occupancy
-#   occupancy_refine_flag   whether the group total was refined or held fixed
-#   occupancy_value         the held value, when fixed
-#   state_kind              compositional (something is there or not) vs conformational
-#                           (the same thing in a different pose)
-#
-# apo + bound = 1 is complete under the root. pose_1 + pose_2 = occupancy(bound) is complete
-# under a refinable parent -- the nested case that no mainstream program fits today, recorded
-# so that a pipeline can grow into it.
 #
 loop_
 _atom_site.group_PDB
@@ -234,13 +221,9 @@ loop_
 _pdbx_heterogeneity_hierarchy.alt_group_id
 _pdbx_heterogeneity_hierarchy.coexistence_group_id
 _pdbx_heterogeneity_hierarchy.parent_alt_groups_id
-_pdbx_heterogeneity_hierarchy.occupancy_completeness
-_pdbx_heterogeneity_hierarchy.occupancy_refine_flag
-_pdbx_heterogeneity_hierarchy.occupancy_value
-_pdbx_heterogeneity_hierarchy.state_kind
-base   .           .     .        .       1.0 .
-apo    pocket      base  complete refined .   compositional
-bound  pocket      base  complete refined .   compositional
-pose_1 ligand_pose bound complete refined .   conformational
-pose_2 ligand_pose bound complete refined .   conformational
+base   .           .
+apo    pocket      base
+bound  pocket      base
+pose_1 ligand_pose bound
+pose_2 ligand_pose bound
 #

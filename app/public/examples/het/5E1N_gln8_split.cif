@@ -1,4 +1,4 @@
-data_ex_subresidue
+data_5E1N_gln8_split
 #
 # Calmodulin (PDB 5E1N), residues Glu6-Glu7-Gln8 of chain A. Deposited coordinates, copied
 # verbatim. Hydrogens are omitted EXCEPT Gln8's backbone amide H, which is the whole point.

@@ -10,13 +10,14 @@ export interface ExampleSignature {
 
 // A curated structure that demonstrates one kind of structural heterogeneity, rendered with a
 // representation/colour theme chosen to surface that feature in 3D. Normally fetched from RCSB by
-// `pdbId`; if `file` is set it is fetched from that bundled URL instead (used for the synthetic
-// heterogeneity-extension demos, which are not PDB entries). `motion`, when set, enables an
-// in-viewer animation: 'frames' scrubs/plays the models, 'tls' animates the rigid-body libration
-// from the TLS tensors, 'wiggle' runs Mol*'s shader thermal animation from the B-factor.
+// `pdbId`; if `file` is set it is fetched from that bundled URL instead (used for the
+// heterogeneity-extension examples, which are carved local sites rather than whole entries).
+// `motion`, when set, enables an in-viewer animation: 'frames' scrubs/plays the models, 'tls'
+// animates the rigid-body libration from the TLS tensors, 'wiggle' runs Mol*'s shader thermal
+// animation from the B-factor.
 export interface StructureExample {
-  id?: string; // stable key (defaults to pdbId); needed when several demos share a synthetic pdbId
-  pdbId: string; // RCSB id, or a short case label (e.g. "B+") for bundled demos
+  id?: string; // stable key (defaults to pdbId); needed when several examples carve the same entry
+  pdbId: string; // RCSB id, or a short label (e.g. "constructed") for bundled files
   file?: { url: string; name: string }; // bundled local CIF; fetched instead of RCSB when present
   title: string;
   blurb: string;
@@ -132,66 +133,79 @@ export const EXAMPLE_GROUPS: ExampleGroup[] = [
     ],
   },
   {
-    // Synthetic, hand-built files (not PDB entries) that carry the proposed _pdbx_alt_groups /
-    // _pdbx_heterogeneity_hierarchy / _pdbx_state_coexistence categories from the reconciliation
-    // memo. Switch the dictionary to "het" (top bar) to see the new categories linked, and use the
-    // heterogeneity controls to colour by network / step through the legal states.
+    // Local sites carved out of deposited entries by heterogeneity-proposal/scripts/carve_examples.py,
+    // then annotated with the proposed _pdbx_alt_groups / _pdbx_heterogeneity_hierarchy /
+    // _pdbx_state_coexistence / _pdbx_occupancy_constraint categories. The coordinates are copied
+    // verbatim from the archive (constructed_two_pocket excepted, and labelled as such); only the
+    // annotation is new, since by definition it does not exist in the archive yet. These are the same
+    // files the /proposal page walks through. Switch the dictionary to "het" (top bar) to see the new
+    // categories linked, and use the heterogeneity controls to colour by network / step through the
+    // legal states.
     label: "Heterogeneity networks (proposed extension)",
     note: "the proposed correlated-alternate categories — switch the dict to 'het' to see them linked",
     items: [
       {
-        id: "het-demo",
-        pdbId: "demo",
-        file: { url: "/examples/het/network_demo.cif", name: "network_demo.cif" },
-        title: "Two serines flip together",
-        blurb: "warm-up · net_1 (both A) / net_2 (both B)",
-        view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
-        signature: { category: "pdbx_alt_groups", note: "two networks (net_1/net_2) each select the A or B atoms of Ser34 + Ser39, one connected chain" },
-      },
-      {
-        id: "het-a",
-        pdbId: "A",
-        file: { url: "/examples/het/case_a_rotamer.cif", name: "case_a_rotamer.cif" },
+        id: "1EJG_rotamer",
+        pdbId: "1EJG",
+        file: { url: "/examples/het/1EJG_rotamer.cif", name: "1EJG_rotamer.cif" },
         title: "One residue, two rotamers",
-        blurb: "baseline · plain altloc, no new categories needed",
+        blurb: "baseline · Arg10 A 0.67 / B 0.33 · no new categories needed",
         view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
-        signature: { category: "atom_site", field: "label_alt_id", note: "a single side chain in two positions — the new categories earn their keep only from case B" },
+        signature: { category: "atom_site", field: "label_alt_id", note: "a single side chain in two positions — both alternatives sit inside one residue, so the letter alone is enough and the new categories earn nothing" },
       },
       {
-        id: "het-b",
-        pdbId: "B",
-        file: { url: "/examples/het/case_b_network.cif", name: "case_b_network.cif" },
-        title: "Correlated network across two residues",
-        blurb: "Asp30 + His35 flip together, 50/50",
+        id: "5E1N_ca_site",
+        pdbId: "5E1N",
+        file: { url: "/examples/het/5E1N_ca_site.cif", name: "5E1N_ca_site.cif" },
+        title: "Correlated network at a calcium site",
+        blurb: "EF-hand · 6 networks, 2 occupancy groups, different letter sets",
         view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
-        signature: { category: "pdbx_alt_groups", note: "net_1/net_2 name which alternates across the structure are one state" },
+        signature: { category: "pdbx_alt_groups", note: "two coupled stretches around Ca 203 lettered {B,D} and {A,B,C,D} — the letters do not line up, so only a named network can say which alternate goes with which" },
       },
       {
-        id: "het-bplus",
-        pdbId: "B+",
-        file: { url: "/examples/het/case_b_plus_atom.cif", name: "case_b_plus_atom.cif" },
+        id: "5E1N_gln8_split",
+        pdbId: "5E1N",
+        file: { url: "/examples/het/5E1N_gln8_split.cif", name: "5E1N_gln8_split.cif" },
         title: "Split below the altloc letter",
-        blurb: "Lys78 backbone vs side chain · split by label_atom_id",
+        blurb: "Gln8 · amide H and side chain in different networks, same letter",
         view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
-        signature: { category: "pdbx_alt_groups", field: "label_atom_id", note: "the atom-level escape hatch: networks separated by atom name, not residue or letter" },
+        signature: { category: "pdbx_alt_groups", field: "label_atom_id", note: "the atom-level escape hatch: two networks separated by atom name, because both are 'chain A, residue 8, alternate A'" },
       },
       {
-        id: "het-c",
-        pdbId: "C",
-        file: { url: "/examples/het/case_c_nesting.cif", name: "case_c_nesting.cif" },
-        title: "Compositional + conformational, nested",
-        blurb: "apo 0.70 / bound 0.30 → ligand poses 0.20 + 0.10",
+        id: "7HHS_apo_bound",
+        pdbId: "7HHS",
+        file: { url: "/examples/het/7HHS_apo_bound.cif", name: "7HHS_apo_bound.cif" },
+        title: "Nested occupancy: apo / bound, then poses",
+        blurb: "apo 0.78 / bound 0.22 → poses 0.13 + 0.09 = 0.22",
         view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
-        signature: { category: "pdbx_heterogeneity_hierarchy", note: "the ligand poses nest under 'bound'; no ligand co-occurs with apo, with no exclusion row" },
+        signature: { category: "pdbx_heterogeneity_hierarchy", note: "the poses nest under 'bound', so they sum to their parent rather than to one — and no pose can co-occur with apo, with no exclusion row" },
       },
       {
-        id: "het-d",
-        pdbId: "D",
-        file: { url: "/examples/het/case_d_metal.cif", name: "case_d_metal.cif" },
-        title: "Multi-chain metal coordination",
-        blurb: "Ca at a two-chain interface · explicit NOT exclusion",
+        id: "7HHS_apo_bound_occ",
+        pdbId: "7HHS",
+        file: { url: "/examples/het/7HHS_apo_bound_occ.cif", name: "7HHS_apo_bound_occ.cif" },
+        title: "The occupancy specification, carried",
+        blurb: "as above + completeness / refine flag / value / state kind",
         view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
-        signature: { category: "pdbx_state_coexistence", note: "the one case where the optional NOT exclusion table earns its place" },
+        signature: { category: "pdbx_heterogeneity_hierarchy", field: "occupancy_completeness", note: "the sum rule, the refined-or-fixed flag and the held value — what the refinement program knew and deposition discards" },
+      },
+      {
+        id: "5E1N_arg74_clash",
+        pdbId: "5E1N",
+        file: { url: "/examples/het/5E1N_arg74_clash.cif", name: "5E1N_arg74_clash.cif" },
+        title: "The one real NOT exclusion",
+        blurb: "Arg74 alt B lands 2.14 Å from water 468 · alts C and D clear it",
+        view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
+        signature: { category: "pdbx_state_coexistence", note: "a cross-branch clash: the rotamer and the solvent site sit in different branches, so nothing in the tree forbids them — the one case where the optional NOT list earns its place" },
+      },
+      {
+        id: "constructed_two_pocket",
+        pdbId: "constructed",
+        file: { url: "/examples/het/constructed_two_pocket.cif", name: "constructed_two_pocket.cif" },
+        title: "The two-pocket graph",
+        blurb: "constructed · O(EDO1) = O(EDO2) + O(EDO3), which the tree cannot hold",
+        view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
+        signature: { category: "pdbx_occupancy_constraint", note: "the only constructed example here — no deposited counterpart exists. The tree reads the two pockets as independent; the linear constraint restores the edge it drops" },
       },
     ],
   },

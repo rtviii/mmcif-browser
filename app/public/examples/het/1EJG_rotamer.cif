@@ -1,4 +1,4 @@
-data_ex_rotamer
+data_1EJG_rotamer
 #
 # Crambin (PDB 1EJG), residues Ala9-Arg10-Ser11 of chain A. Deposited coordinates, H omitted.
 #

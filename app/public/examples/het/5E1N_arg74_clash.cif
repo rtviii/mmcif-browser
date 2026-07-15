@@ -1,4 +1,4 @@
-data_ex_exclusion
+data_5E1N_arg74_clash
 #
 # Calmodulin (PDB 5E1N), Arg74 and its neighbours, plus water 468. Deposited coordinates,
 # copied verbatim; H omitted.

@@ -1,4 +1,4 @@
-data_ex_minimal
+data_1EJG_minimal
 #
 # Crambin (PDB 1EJG, 0.54 A), residues Asn14-Val15-Cys16 of chain A.
 # Coordinates are the deposited ones, copied verbatim; hydrogens omitted.

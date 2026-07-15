@@ -1,4 +1,4 @@
-data_ex_ef_hand
+data_5E1N_ca_site
 #
 # Calmodulin (PDB 5E1N, atomic resolution), the EF-hand loop around calcium ion CA 203:
 # residues 19-31 of chain A, the ion, and its coordinating water. Deposited coordinates,

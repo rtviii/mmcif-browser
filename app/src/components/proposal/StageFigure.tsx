@@ -28,8 +28,10 @@ export interface StageFigureProps {
   truncateBefore?: string;
   codeTitle?: string;
   caption?: React.ReactNode;
-  /** Height of the whole figure row: the viewer fills what the controls leave, and the source
-   *  panel is bounded to match it and scrolls internally. */
+  /** Shown in the control strip when the file carries no networks, so an unannotated figure
+   *  explains its empty strip instead of merely lacking one. */
+  note?: React.ReactNode;
+  /** Height of the whole figure row: the source panel is bounded to it and scrolls internally. */
   height?: string;
 }
 
@@ -40,8 +42,13 @@ export function StageFigure({
   truncateBefore,
   codeTitle,
   caption,
+  note,
   height = "600px",
 }: StageFigureProps) {
+  // Collapsed by default. Eight figures on the page, and a mounted Mol* plugin is by far the most
+  // expensive thing on it — so nothing below is rendered, fetched or instantiated until asked for.
+  const [open, setOpen] = useState(false);
+
   const [cif, setCif] = useState<string | null>(null);
   const [molFile, setMolFile] = useState<MolCifFile | null>(null);
   const [model, setModel] = useState<HetModel | null>(null);
@@ -57,13 +64,11 @@ export function StageFigure({
 
   const onReady = useCallback((v: MolstarViewerInstance | null) => setViewer(v), []);
 
+  // Fetched and parsed on first expand, then kept: collapsing unmounts the viewer, but re-expanding
+  // should not re-fetch. `fileUrl` and `het` are fixed per figure on this page.
   useEffect(() => {
+    if (!open || cif) return;
     let cancelled = false;
-    setCif(null);
-    setMolFile(null);
-    setModel(null);
-    setActiveNet(null);
-    setActiveState(-1);
     (async () => {
       try {
         const text = await fetch(fileUrl).then((r) => r.text());
@@ -80,7 +85,18 @@ export function StageFigure({
     return () => {
       cancelled = true;
     };
-  }, [fileUrl, het]);
+  }, [open, cif, fileUrl, het]);
+
+  // Collapsing unmounts MolstarViewer, which never reports the loss (its onReady effect has no
+  // cleanup). Drop the handle ourselves, or the next expand can drive a disposed plugin in the
+  // window before the fresh one is ready. Selection resets with it.
+  useEffect(() => {
+    if (open) return;
+    setViewer(null);
+    setActiveNet(null);
+    setActiveState(-1);
+    setHoverLines(null);
+  }, [open]);
 
   useEffect(() => () => {
     if (flashTimer.current) window.clearTimeout(flashTimer.current);
@@ -276,64 +292,97 @@ export function StageFigure({
     [viewer, resolveTarget, pickNetwork],
   );
 
+  const strip =
+    model && model.networks.length > 0 ? (
+      <HetControls
+        model={model}
+        colorOf={colorOf}
+        activeNet={activeNet}
+        activeState={activeState}
+        onPickNetwork={pickNetwork}
+        onPickState={pickState}
+        onHoverNetwork={hoverNetwork}
+      />
+    ) : note ? (
+      <div className="rounded border border-slate-200 bg-white px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+        {note}
+      </div>
+    ) : null;
+
   return (
-    // Full-bleed breakout so long _atom_site rows are readable. Margin-based, not transform-based.
-    <figure className="my-10 ml-[calc(50%_-_47vw)] w-[94vw]">
-      <div className="mx-auto max-w-[1800px]">
-        <div
-          className="flex flex-col gap-3 lg:h-[var(--fig-h)] lg:flex-row lg:gap-4"
-          style={{ ["--fig-h" as string]: height }}
+    // Collapsed the figure sits in the prose column, so it reads as a line in the text rather than
+    // interrupting it. Expanded it spans the full grid (see .doc-grid / .bleed in globals.css).
+    <figure className={`my-7 ${open ? "bleed" : ""}`}>
+      <div className={open ? "mx-auto max-w-[1800px] px-6" : ""}>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex w-full items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2 text-left transition-colors hover:border-slate-300 hover:bg-slate-50"
         >
-          {/* LEFT — the source, bounded to the figure height and scrolling internally.
-              min-h-0 at every level of the chain, or a flex child refuses to shrink below its
-              content and the panel runs off the bottom of the figure. */}
-          <div className="flex h-[440px] min-h-0 min-w-0 flex-col lg:h-full lg:flex-1">
-            <CifPanel
-              ref={panelRef}
-              className="h-full"
-              cif={cif ?? ""}
-              doc={doc}
-              molFile={molFile}
-              title={codeTitle}
-              truncateBefore={truncateBefore}
-              marks={marks}
-              hoverLines={hoverLines}
-              flashLines={flashLines}
-              onHoverLine={onHoverLine}
-              onActivateLine={onActivateLine}
-            />
-          </div>
+          <span
+            className={`shrink-0 text-[9px] text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+          >
+            ▶
+          </span>
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-slate-600">
+            {codeTitle}
+          </span>
+          <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+            {open ? "hide" : "show"}
+          </span>
+        </button>
 
-          {/* RIGHT — the viewer takes whatever the control strip leaves. */}
-          <div className="flex min-h-0 w-full flex-col gap-2 lg:h-full lg:w-[440px] lg:shrink-0">
-            <div className="relative h-[340px] min-h-0 overflow-hidden rounded border border-slate-200 bg-white lg:h-auto lg:flex-1">
-              <MolstarViewer
-                data={cif}
-                binary={false}
-                view={view}
-                hetNetworks={hetNetworks}
-                minimal
-                onReady={onReady}
-              />
+        {open && (
+          <>
+            <div
+              className="mt-2 flex flex-col gap-3 lg:h-[var(--fig-h)] lg:flex-row lg:gap-4"
+              style={{ ["--fig-h" as string]: height }}
+            >
+              {/* LEFT — the source, bounded to the figure height and scrolling internally.
+                  min-h-0 at every level of the chain, or a flex child refuses to shrink below its
+                  content and the panel runs off the bottom of the figure. */}
+              <div className="flex h-[440px] min-h-0 min-w-0 flex-col lg:h-full lg:flex-1">
+                <CifPanel
+                  ref={panelRef}
+                  className="h-full"
+                  cif={cif ?? ""}
+                  doc={doc}
+                  molFile={molFile}
+                  title={fileUrl.split("/").pop()}
+                  truncateBefore={truncateBefore}
+                  marks={marks}
+                  hoverLines={hoverLines}
+                  flashLines={flashLines}
+                  onHoverLine={onHoverLine}
+                  onActivateLine={onActivateLine}
+                />
+              </div>
+
+              {/* RIGHT — the viewer. Mounted only while open: useMolstarViewer builds the plugin
+                  from a mount effect, so not rendering this is what keeps the page cheap. */}
+              <div className="relative h-[340px] min-h-0 w-full overflow-hidden rounded border border-slate-200 bg-white lg:h-full lg:w-[440px] lg:shrink-0">
+                <MolstarViewer
+                  data={cif}
+                  binary={false}
+                  view={view}
+                  hetNetworks={hetNetworks}
+                  minimal
+                  onReady={onReady}
+                />
+              </div>
             </div>
-            {model && model.networks.length > 0 && (
-              <HetControls
-                model={model}
-                colorOf={colorOf}
-                activeNet={activeNet}
-                activeState={activeState}
-                onPickNetwork={pickNetwork}
-                onPickState={pickState}
-                onHoverNetwork={hoverNetwork}
-              />
-            )}
-          </div>
-        </div>
 
-        {caption && (
-          <figcaption className="mt-3 max-w-[110ch] text-[12px] leading-relaxed text-slate-500">
-            {caption}
-          </figcaption>
+            {/* The control strip spans source + viewer, so the chips have the whole figure to wrap
+                into. In the viewer column they were silently clipped. */}
+            {strip && <div className="mt-2">{strip}</div>}
+
+            {caption && (
+              <figcaption className="mt-3 max-w-[110ch] text-[12px] leading-relaxed text-slate-500">
+                {caption}
+              </figcaption>
+            )}
+          </>
         )}
       </div>
     </figure>
@@ -350,17 +399,16 @@ function chip(active: boolean) {
   }`;
 }
 
-// One labelled, horizontally-scrolling track. The fixed-width label column is what makes the two
-// rows read as a toolbar rather than a wrapped pile: every chip starts at the same x.
+// One labelled track. The fixed-width label column is what makes the rows read as a toolbar rather
+// than a wrapped pile: every chip starts at the same x. The chips wrap — the strip has the width of
+// the whole figure now, so nothing needs to be clipped.
 function ChipRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 border-b border-slate-100 px-2 py-1.5 last:border-0">
-      <span className="w-14 shrink-0 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+    <div className="flex items-start gap-2 border-b border-slate-100 px-2 py-1.5 last:border-0">
+      <span className="mt-0.5 w-14 shrink-0 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
         {label}
       </span>
-      <div className="no-scrollbar flex min-w-0 flex-1 gap-1 overflow-x-auto whitespace-nowrap">
-        {children}
-      </div>
+      <div className="flex min-w-0 flex-1 flex-wrap gap-1">{children}</div>
     </div>
   );
 }
@@ -383,7 +431,7 @@ function HetControls({
   onHoverNetwork: (id: string | null) => void;
 }) {
   return (
-    <div className="shrink-0 rounded border border-slate-200 bg-white text-[11px]">
+    <div className="rounded border border-slate-200 bg-white text-[11px]">
       <ChipRow label="networks">
         {model.networks.map((n) => (
           <button
