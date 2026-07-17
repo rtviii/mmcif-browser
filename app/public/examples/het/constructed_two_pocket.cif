@@ -1,26 +1,9 @@
 data_constructed_two_pocket
 #
-# CONSTRUCTED -- this is the only example on the page that is not deposited data. It is the
-# diffuse folks' two-pocket case, which has no counterpart in the archive; it is a constructed
-# case in the source deck too. The peptide scaffold is a real 1EJG tripeptide; the occupants are
-# built to their correct internal geometry (ethylene glycol C-C 1.512 A / C-O 1.423 A; a planar
-# phenol ring) and placed so that nothing clashes.
-#
-# Two adjacent pockets:
-#
-#   top pocket    (residue 501)  Ligand (alt A, 0.50)  xor  EDO1 (alt B, 0.50)  -> sums to 1
-#   bottom pocket (residue 502)  EDO2   (alt C, 0.30)  xor  EDO3 (alt D, 0.20)  -> sums to 0.5
-#
-# The tree records the two exclusive pockets cleanly, as two coexistence groups under base.
-# Read alone, it projects them as INDEPENDENT: the enumerated states are the 2x2 cartesian
-# product. The one fact it cannot hold is the cross-pocket coupling -- the bottom pocket is
-# ordered only within the EDO1 population, so
-#
-#   O(EDO1) = O(EDO2) + O(EDO3)
-#
-# That is a genuine second parent: a directed acyclic graph, not a tree. It is carried below as
-# one _pdbx_occupancy_constraint row of type 'linear', shaped like a refinement restraint, with
-# enforced = annotation -- written down and portable, though no mainstream program fits it yet.
+# CONSTRUCTED -- the only example here that is not deposited data; this case has no counterpart
+# in the archive. The peptide scaffold is a real 1EJG tripeptide; the occupants are built to
+# their correct internal geometry (ethylene glycol C-C 1.512 A / C-O 1.423 A; a planar phenol
+# ring) and placed so that nothing clashes.
 #
 #
 loop_

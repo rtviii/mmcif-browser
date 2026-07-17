@@ -1,11 +1,7 @@
 data_1EJG_minimal
 #
 # Crambin (PDB 1EJG, 0.54 A), residues Asn14-Val15-Cys16 of chain A.
-# Coordinates are the deposited ones, copied verbatim; hydrogens omitted.
-#
-# The baseline: a coordinate file is a spine of cross-references, and _atom_site holds
-# the coordinates. Every atom is fully present -- occupancy 1.00, no label_alt_id.
-# Every later example is a delta against this.
+# Deposited coordinates, copied verbatim; hydrogens omitted.
 #
 #
 loop_

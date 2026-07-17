@@ -41,7 +41,7 @@ body {
   display: grid;
   grid-template-columns:
     [full-start] minmax(1.5rem, 1fr)
-    [content-start] minmax(0, var(--doc-w, 960px)) [content-end]
+    [content-start] minmax(0, var(--doc-w, 1120px)) [content-end]
     minmax(1.5rem, 1fr) [full-end];
 }
 .doc-grid > * {

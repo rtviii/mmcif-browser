@@ -492,8 +492,10 @@ function GearToggle({
   );
 }
 
-// The dict-switch: a two-state segmented control in the panel header. "current mmCIF" applies the
-// truncateBefore cut (the file today's dictionary can express); "+ proposed extension" shows it all.
+// The dict-switch: a two-state segmented control in the panel header. "vanilla cif" applies the
+// truncateBefore cut (the file today's dictionary can express); "extended" shows it all. The labels
+// match the badge on the figure's header, so the switch reads as "show me the vanilla view of this
+// extended file".
 function DictSwitch({
   view,
   onView,
@@ -513,8 +515,8 @@ function DictSwitch({
   );
   return (
     <div className="ml-auto flex shrink-0 items-center rounded bg-slate-100 p-0.5 text-[9px] font-semibold uppercase tracking-wider">
-      {opt("current", "current mmCIF")}
-      {opt("proposed", "+ proposed extension")}
+      {opt("current", "vanilla cif")}
+      {opt("proposed", "extended")}
     </div>
   );
 }

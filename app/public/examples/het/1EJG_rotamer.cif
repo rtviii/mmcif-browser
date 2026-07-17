@@ -1,14 +1,7 @@
 data_1EJG_rotamer
 #
-# Crambin (PDB 1EJG), residues Ala9-Arg10-Ser11 of chain A. Deposited coordinates, H omitted.
-#
-# Arg10's guanidinium group is modelled in two positions: label_alt_id A at occupancy 0.67
-# and B at 0.33. Its backbone and the first half of its side chain (N, CA, C, O, CB, CG, CD)
-# carry no altloc -- they are single-conformer and shared. The neighbours are single-conformer.
-#
-# Both alternatives sit inside one residue, so the altloc letter relates only things that are
-# already together and the occupancies sum to 1 within the residue. mmCIF already handles this
-# completely. No extension is needed, and none of the proposed categories appear here.
+# Crambin (PDB 1EJG), residues Ala9-Arg10-Ser11 of chain A.
+# Deposited coordinates, copied verbatim; hydrogens omitted.
 #
 #
 loop_

@@ -4,24 +4,8 @@ data_5E1N_ca_site
 # residues 19-31 of chain A, the ion, and its coordinating water. Deposited coordinates,
 # copied verbatim; hydrogens omitted.
 #
-# Two multi-residue alternates run through this loop, and they are the reason the altloc
-# letter alone is not enough:
-#
-#   residues 19-24  are modelled in TWO alternates,  lettered B (0.48) and D (0.52)
-#   residues 25-31  are modelled in FOUR alternates, lettered A (0.38) B (0.24) C (0.19) D (0.19)
-#
-# Each set sums to 1.00, so each is one occupancy group. But the two sets use different
-# letters: there is no letter A or C in the first segment at all, and nothing in the file
-# says whether "B" at residue 20 is the same physical state as "B" at residue 26. The
-# correlation is real -- both segments coordinate the same ion -- and it is unwritten.
-#
-# The _pdbx_alt_groups / _pdbx_heterogeneity_hierarchy rows below write it down. The grouping
-# is the diffuse folks' own, from 5E1N_hierarchy_20250423.cif (groups A18B_to_A24B /
-# A18D_to_A24D and A25{A,B,C,D}_to_A36{A,B,C,D}), clipped to the carved residue window.
-#
-# _struct_conn carries the deposited metal coordination bonds. They are altloc-specific --
-# Thr26's carbonyl O reaches the ion at 2.33 / 2.45 / 2.65 / 2.10 A in alternates A / B / C / D
-# -- so they cannot be reconstructed from a distance cutoff and have to be recorded.
+# The network grouping is taken from a prototype annotation of 5E1N, clipped to the carved
+# residue window. _struct_conn carries the deposited metal coordination bonds.
 #
 #
 loop_

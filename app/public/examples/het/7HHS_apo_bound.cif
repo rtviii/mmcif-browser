@@ -3,32 +3,6 @@ data_7HHS_apo_bound
 # Fragment-screening entry PDB 7HHS: the ligand pocket -- residues 21-25 and 47-49 of chain A
 # plus both modelled poses of ligand A1A7O. Deposited coordinates, copied verbatim; H omitted.
 #
-# The pocket itself is modelled in two conformations:
-#
-#   apo    label_alt_id A   occupancy 0.78
-#   bound  label_alt_id B   occupancy 0.22
-#
-# and the ligand is modelled twice, as two mutually exclusive poses that occupy the same space
-# (their closest atoms are 0.02 A apart -- they cannot both be there):
-#
-#   pose_1  residue 201  label_alt_id B  occupancy 0.13
-#   pose_2  residue 202  label_alt_id C  occupancy 0.09
-#
-# The arithmetic is the point:  0.13 + 0.09 = 0.22 = occupancy(bound).
-#
-# The ligand poses are ordered only within the bound population, so their occupancies sum to
-# their parent's rather than to 1. The hierarchy carries exactly that: apo and bound share one
-# occupancy group under base, and the two poses share a second group whose PARENT is bound.
-# No exclusion row is needed -- a pose cannot co-occur with apo because its parent excludes apo.
-#
-# The apo node is also what finally gives the ligand's ABSENCE a name. In 78% of the copies there
-# is no ligand at all, and a state with no atoms cannot be named by any per-atom mechanism; only a
-# node in the tree can carry it.
-#
-# Note finally that the ligand's letters (B, C) do not line up with the pocket's (A, B). "B" on
-# residue 201 and "B" on residue 22 are different physical states that happen to share a letter.
-# The letter's guarantee is local; it is a hint, not a record.
-#
 loop_
 _atom_site.group_PDB
 _atom_site.id

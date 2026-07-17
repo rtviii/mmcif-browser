@@ -1,22 +1,8 @@
 data_5E1N_gln8_split
 #
 # Calmodulin (PDB 5E1N), residues Glu6-Glu7-Gln8 of chain A. Deposited coordinates, copied
-# verbatim. Hydrogens are omitted EXCEPT Gln8's backbone amide H, which is the whole point.
-#
-# Gln8 carries two independent choices at once, and they reuse the same altloc letters:
-#
-#   its amide H  follows the residues 6-7 backbone alternate  -- letters A, B, C
-#   its side chain (CB CG CD OE1 NE2) is its own rotamer      -- letters A, B
-#
-# So the atoms of Gln8 with label_alt_id = A belong to TWO different networks: the H to the
-# 6-7 backbone network, the side chain to the residue-8 rotamer. A key of
-# (chain, residue range, altloc) cannot separate them -- both are "chain A, residue 8, alt A".
-#
-# This is not hypothetical. In the diffuse folks' own annotated 5E1N there are 28 such
-# (residue, altloc) pairs whose atoms fall in two different heterogeneity groups, and it is
-# why that file resorted to a per-atom column on _atom_site. The optional label_atom_id
-# column on _pdbx_alt_groups says the same thing without touching the coordinate table:
-# a row with an atom name claims exactly that atom.
+# verbatim. Hydrogens are omitted EXCEPT Gln8's backbone amide H, which is the atom the
+# example is about.
 #
 #
 loop_

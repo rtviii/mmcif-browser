@@ -18,6 +18,7 @@ export function MmcifChip({
   variant = "chip",
   selected = false,
   full = false,
+  className,
   onToggle,
   onRemove,
   onDigDeeper,
@@ -27,6 +28,9 @@ export function MmcifChip({
   variant?: "chip" | "row" | "inline";
   selected?: boolean;
   full?: boolean; // chip variant: render the full name (no max-width truncation)
+  /** inline variant only: replaces the default styling. For prose that carries its own palette
+   *  (the proposal page), where the inspector's teal/indigo would shout. */
+  className?: string;
   onToggle?: () => void;
   onRemove?: () => void;
   onDigDeeper?: () => void;
@@ -47,7 +51,10 @@ export function MmcifChip({
   if (variant === "inline") {
     return (
       <span
-        className={`cursor-help font-mono ${isCat ? "text-slate-700 hover:text-indigo-700" : "text-teal-700 hover:underline"}`}
+        className={
+          className ??
+          `cursor-help font-mono ${isCat ? "text-slate-700 hover:text-indigo-700" : "text-teal-700 hover:underline"}`
+        }
         onMouseEnter={onEnter}
         onMouseLeave={onLeave}
       >
