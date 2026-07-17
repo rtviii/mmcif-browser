@@ -45,6 +45,9 @@ export interface CifPanelProps {
   title?: string;
   /** Hide everything from the first line containing this marker ("the file as it is today"). */
   truncateBefore?: string;
+  /** When set, the header carries a "current mmCIF | + proposed extension" toggle that turns
+   *  truncateBefore on and off. Default view is "+ proposed extension", i.e. no truncation. */
+  dictSwitch?: boolean;
   marks?: ReadonlyMap<number, LineMark> | null;
   hoverLines?: ReadonlySet<number> | null;
   /** Post-snap flash. Pass a fresh Set each time so re-clicking the same chip restarts it. */
@@ -63,6 +66,7 @@ export const CifPanel = forwardRef<CifPanelHandle, CifPanelProps>(function CifPa
     molFile,
     title,
     truncateBefore,
+    dictSwitch,
     marks,
     hoverLines,
     flashLines,
@@ -77,6 +81,9 @@ export const CifPanel = forwardRef<CifPanelHandle, CifPanelProps>(function CifPa
   const [table, setTable] = useState(true);
   const [wrap, setWrap] = useState(true);
   const [hideNoise, setHideNoise] = useState(false);
+  // The dict-switch. "proposed" (default) shows the full annotated file; "current" applies
+  // truncateBefore, hiding the proposed categories to leave the file today's dictionary can express.
+  const [view, setView] = useState<"current" | "proposed">("proposed");
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pop, openPopover, closePopover] = usePopover();
@@ -85,13 +92,16 @@ export const CifPanel = forwardRef<CifPanelHandle, CifPanelProps>(function CifPa
   // marker must START the line: these files discuss the categories in their header comments, and a
   // substring match would cut at the prose instead of at the declaration.
   const cutoff = useMemo(() => {
-    if (!doc || !truncateBefore) return Infinity;
+    // With the toggle, the cut applies only in the "current" view; without it, truncateBefore is a
+    // fixed one-way cut (as it was before the toggle existed).
+    const applyCut = dictSwitch ? view === "current" : true;
+    if (!doc || !truncateBefore || !applyCut) return Infinity;
     const hit = doc.lines.findIndex((l) => l.text.trimStart().startsWith(truncateBefore));
     if (hit < 0) return Infinity;
     let end = hit;
     while (end > 0 && BLANK_TAIL.test(doc.lines[end - 1].text)) end--;
     return end; // exclusive
-  }, [doc, truncateBefore]);
+  }, [doc, truncateBefore, dictSwitch, view]);
 
   useImperativeHandle(
     ref,
@@ -139,6 +149,7 @@ export const CifPanel = forwardRef<CifPanelHandle, CifPanelProps>(function CifPa
             {title}
           </span>
         )}
+        {dictSwitch && <DictSwitch view={view} onView={setView} />}
         <SettingsGear
           table={table}
           wrap={wrap}
@@ -478,5 +489,32 @@ function GearToggle({
         <span className="ml-1 text-slate-400">— {hint}</span>
       </span>
     </button>
+  );
+}
+
+// The dict-switch: a two-state segmented control in the panel header. "current mmCIF" applies the
+// truncateBefore cut (the file today's dictionary can express); "+ proposed extension" shows it all.
+function DictSwitch({
+  view,
+  onView,
+}: {
+  view: "current" | "proposed";
+  onView: (v: "current" | "proposed") => void;
+}) {
+  const opt = (v: "current" | "proposed", label: string) => (
+    <button
+      onClick={() => onView(v)}
+      className={`rounded-sm px-1.5 py-0.5 transition-colors ${
+        view === v ? "bg-white text-slate-700 shadow-sm" : "text-slate-400 hover:text-slate-600"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="ml-auto flex shrink-0 items-center rounded bg-slate-100 p-0.5 text-[9px] font-semibold uppercase tracking-wider">
+      {opt("current", "current mmCIF")}
+      {opt("proposed", "+ proposed extension")}
+    </div>
   );
 }

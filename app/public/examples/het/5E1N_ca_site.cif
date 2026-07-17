@@ -16,7 +16,7 @@ data_5E1N_ca_site
 # correlation is real -- both segments coordinate the same ion -- and it is unwritten.
 #
 # The _pdbx_alt_groups / _pdbx_heterogeneity_hierarchy rows below write it down. The grouping
-# is the working group's own, from 5E1N_hierarchy_20250423.cif (groups A18B_to_A24B /
+# is the diffuse folks' own, from 5E1N_hierarchy_20250423.cif (groups A18B_to_A24B /
 # A18D_to_A24D and A25{A,B,C,D}_to_A36{A,B,C,D}), clipped to the carved residue window.
 #
 # _struct_conn carries the deposited metal coordination bonds. They are altloc-specific --
@@ -320,33 +320,6 @@ HETATM 271 CA CA  . CA  D 3 .  ? 46.284 7.076  -8.703  1.00 7.82  ? 203 CA  A CA
 HETATM 272 O  O   . HOH I 4 .  ? 44.946 7.120  -10.641 1.00 11.87 ? 411 HOH A O   1
 #
 loop_
-_pdbx_alt_groups.id
-_pdbx_alt_groups.alt_group_id
-_pdbx_alt_groups.auth_asym_id
-_pdbx_alt_groups.auth_seq_id_start
-_pdbx_alt_groups.auth_seq_id_end
-_pdbx_alt_groups.label_alt_id
-_pdbx_alt_groups.label_atom_id
-1 seg1_B A 20 24 B .
-2 seg1_D A 20 24 D .
-3 seg2_A A 25 31 A .
-4 seg2_B A 25 31 B .
-5 seg2_C A 25 31 C .
-6 seg2_D A 25 31 D .
-#
-loop_
-_pdbx_heterogeneity_hierarchy.alt_group_id
-_pdbx_heterogeneity_hierarchy.coexistence_group_id
-_pdbx_heterogeneity_hierarchy.parent_alt_groups_id
-base   .          .
-seg1_B entry_loop base
-seg1_D entry_loop base
-seg2_A exit_loop  base
-seg2_B exit_loop  base
-seg2_C exit_loop  base
-seg2_D exit_loop  base
-#
-loop_
 _struct_conn.id
 _struct_conn.conn_type_id
 _struct_conn.ptnr1_auth_asym_id
@@ -378,4 +351,34 @@ metalc15 metalc A 203 CA CA . A 31  GLU OE2 B 2.40
 metalc16 metalc A 203 CA CA . A 31  GLU OE2 C 2.41
 metalc17 metalc A 203 CA CA . A 31  GLU OE2 D 2.40
 metalc18 metalc A 203 CA CA . A 411 HOH O   . 2.36
+#
+# proposed heterogeneity extension -- the categories below are NOT part of the
+# current PDBx/mmCIF dictionary; they are what this page proposes to add.
+# the correlation between the two segments -- both coordinate the calcium ion -- has no representation here
+loop_
+_pdbx_alt_groups.id
+_pdbx_alt_groups.alt_group_id
+_pdbx_alt_groups.auth_asym_id
+_pdbx_alt_groups.auth_seq_id_start
+_pdbx_alt_groups.auth_seq_id_end
+_pdbx_alt_groups.label_alt_id
+_pdbx_alt_groups.label_atom_id
+1 seg1_B A 20 24 B .
+2 seg1_D A 20 24 D .
+3 seg2_A A 25 31 A .
+4 seg2_B A 25 31 B .
+5 seg2_C A 25 31 C .
+6 seg2_D A 25 31 D .
+#
+loop_
+_pdbx_heterogeneity_hierarchy.alt_group_id
+_pdbx_heterogeneity_hierarchy.coexistence_group_id
+_pdbx_heterogeneity_hierarchy.parent_alt_groups_id
+base   .          .
+seg1_B entry_loop base
+seg1_D entry_loop base
+seg2_A exit_loop  base
+seg2_B exit_loop  base
+seg2_C exit_loop  base
+seg2_D exit_loop  base
 #

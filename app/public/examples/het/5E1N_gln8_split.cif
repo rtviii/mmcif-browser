@@ -12,7 +12,7 @@ data_5E1N_gln8_split
 # 6-7 backbone network, the side chain to the residue-8 rotamer. A key of
 # (chain, residue range, altloc) cannot separate them -- both are "chain A, residue 8, alt A".
 #
-# This is not hypothetical. In the working group's own annotated 5E1N there are 28 such
+# This is not hypothetical. In the diffuse folks' own annotated 5E1N there are 28 such
 # (residue, altloc) pairs whose atoms fall in two different heterogeneity groups, and it is
 # why that file resorted to a per-atom column on _atom_site. The optional label_atom_id
 # column on _pdbx_alt_groups says the same thing without touching the coordinate table:
@@ -113,6 +113,8 @@ ATOM 69 H H   A GLN A 1 8 ? 51.291 12.354 12.806 0.64 21.58 ? 8 GLN A H   1
 ATOM 70 H H   B GLN A 1 8 ? 51.266 12.323 12.834 0.19 21.58 ? 8 GLN A H   1
 ATOM 71 H H   C GLN A 1 8 ? 51.285 12.269 12.885 0.17 21.58 ? 8 GLN A H   1
 #
+# proposed heterogeneity extension -- the categories below are NOT part of the
+# current PDBx/mmCIF dictionary; they are what this page proposes to add.
 loop_
 _pdbx_alt_groups.id
 _pdbx_alt_groups.alt_group_id

@@ -17,14 +17,12 @@ function C({ children }: { children: ReactNode }) {
 // grid child, and the figures inside it could never escape the content column. Body type is set here
 // and inherited instead.
 function Section({
-  n,
   id,
   title,
   children,
 }: {
-  n?: string;
   id: string;
-  title: string;
+  title?: string;
   children: ReactNode;
 }) {
   return (
@@ -32,31 +30,96 @@ function Section({
       id={id}
       className="doc-grid bleed scroll-mt-6 gap-y-4 text-[13.5px] leading-[1.75] text-slate-700"
     >
-      <div className="flex items-baseline gap-3 border-t border-slate-100 pb-1 pt-9">
-        {n && <span className="font-mono text-[12px] tabular-nums text-slate-300">{n}</span>}
-        <h2 className="text-[18px] font-semibold tracking-tight text-slate-900">{title}</h2>
-      </div>
+      {title && (
+        <div className="flex items-baseline gap-3 border-t border-slate-100 pb-1 pt-9">
+          <h2 className="text-[18px] font-semibold tracking-tight text-slate-900">{title}</h2>
+        </div>
+      )}
       {children}
     </section>
   );
 }
 
-const CONTENTS: { id: string; label: string }[] = [
-  { id: "problem", label: "01 · The missing quantity" },
-  { id: "requirements", label: "02 · Requirements" },
-  { id: "today", label: "03 · What mmCIF provides" },
-  { id: "limit", label: "04 · Where the letter stops" },
-  { id: "categories", label: "05 · The proposed categories" },
-  { id: "networks", label: "06 · Naming a network" },
-  { id: "subresidue", label: "07 · Below the residue" },
-  { id: "prototype", label: "08 · The existing prototype" },
-  { id: "pattern", label: "09 · One pattern, three layers" },
-  { id: "nesting", label: "10 · Nested occupancy" },
-  { id: "exclusions", label: "11 · Metals and exclusions" },
-  { id: "occupancy", label: "12 · Portable occupancy" },
-  { id: "graph", label: "13 · A graph, not a tree" },
-  { id: "open", label: "14 · Open problems" },
-  { id: "examples", label: "Appendix · The examples" },
+// A part boundary. Heavier than the hairline that separates sections within a part: a full-bleed
+// rule and a numbered label. Like Section it is a .bleed .doc-grid sibling (never a wrapper of the
+// sections), so the sections and figures that follow keep their own grid breakout.
+function PartDivider({ part, title }: { part?: string; title: string }) {
+  return (
+    <section className="bleed doc-grid scroll-mt-6 pt-12">
+      <div className="bleed border-t border-slate-300" />
+      <div className="pt-6">
+        {part && (
+          <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-400">
+            Part {part}
+          </div>
+        )}
+        <h2 className="mt-1.5 text-[22px] font-semibold tracking-tight text-slate-900">{title}</h2>
+      </div>
+    </section>
+  );
+}
+
+// Inline cross-reference to another section, by its id.
+function Ref({ to, children }: { to: string; children: ReactNode }) {
+  return (
+    <a
+      href={`#${to}`}
+      className="underline decoration-slate-300 underline-offset-2 hover:text-slate-700"
+    >
+      {children}
+    </a>
+  );
+}
+
+// The five parts (plus the appendix), each grouping the sections underneath it. This is the only
+// place the part structure is spelled out; both nav render sites and the reading order follow it.
+const PARTS: { part?: string; title: string; sections: { id: string; label: string }[] }[] = [
+  {
+    part: "I",
+    title: "The problem",
+    sections: [
+      { id: "problem", label: "The missing quantity" },
+      { id: "requirements", label: "Requirements" },
+    ],
+  },
+  {
+    part: "II",
+    title: "What mmCIF encodes today",
+    sections: [
+      { id: "today", label: "What mmCIF provides today" },
+      { id: "limit", label: "Where the letter stops" },
+    ],
+  },
+  {
+    part: "III",
+    title: "The proposal",
+    sections: [
+      { id: "categories", label: "The proposed categories" },
+      { id: "prototype", label: "The existing prototype" },
+      { id: "pattern", label: "One pattern, three layers" },
+      { id: "occupancy", label: "Portable occupancy" },
+    ],
+  },
+  {
+    part: "IV",
+    title: "The cases",
+    sections: [
+      { id: "networks", label: "Naming a network" },
+      { id: "subresidue", label: "Below the residue" },
+      { id: "nesting", label: "Nested occupancy" },
+      { id: "exclusions", label: "Metals and exclusions" },
+      { id: "graph", label: "A graph, not a tree" },
+    ],
+  },
+  {
+    part: "V",
+    title: "Open problems",
+    sections: [{ id: "open", label: "Open problems" }],
+  },
+  {
+    title: "Appendix — the examples",
+    sections: [{ id: "examples", label: "The example files" }],
+  },
 ];
 
 export default function ProposalPage() {
@@ -69,19 +132,26 @@ export default function ProposalPage() {
         <div className="mb-3 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
           contents
         </div>
-        <nav>
-          <ol className="space-y-1.5 text-[12px]">
-            {CONTENTS.map((c) => (
-              <li key={c.id}>
-                <a
-                  href={`#${c.id}`}
-                  className="block text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
-                >
-                  {c.label}
-                </a>
-              </li>
-            ))}
-          </ol>
+        <nav className="space-y-5">
+          {PARTS.map((p) => (
+            <div key={p.title}>
+              <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+                {p.part ? `${p.part} · ${p.title}` : p.title}
+              </div>
+              <ol className="space-y-1 text-[12px]">
+                {p.sections.map((s) => (
+                  <li key={s.id}>
+                    <a
+                      href={`#${s.id}`}
+                      className="block text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
+                    >
+                      {s.label}
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
         </nav>
         <details className="mt-8 border-t border-slate-100 pt-4">
           <summary className="cursor-pointer list-none text-[9px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-600">
@@ -126,22 +196,29 @@ export default function ProposalPage() {
             <div className="mb-2 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
               contents
             </div>
-            <ol className="flex flex-wrap gap-x-5 gap-y-1.5 text-[12.5px]">
-              {CONTENTS.map((c) => (
-                <li key={c.id}>
-                  <a
-                    href={`#${c.id}`}
-                    className="text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
-                  >
-                    {c.label}
-                  </a>
-                </li>
+            <div className="space-y-2.5">
+              {PARTS.map((p) => (
+                <div key={p.title} className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+                    {p.part ? `${p.part} · ${p.title}` : p.title}
+                  </span>
+                  {p.sections.map((s) => (
+                    <a
+                      key={s.id}
+                      href={`#${s.id}`}
+                      className="text-[12.5px] text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
+                    >
+                      {s.label}
+                    </a>
+                  ))}
+                </div>
               ))}
-            </ol>
+            </div>
           </nav>
 
-          {/* ------------------------------------------------------------------ 01 */}
-          <Section n="01" id="problem" title="The missing quantity">
+          <PartDivider part="I" title="The problem" />
+
+          <Section id="problem" title="The missing quantity">
             <p>
               Diffraction measures the whole ensemble at once, so the electron density is an average.
               mmCIF captures that with two per-atom quantities: an alternate-location letter (
@@ -161,13 +238,13 @@ export default function ProposalPage() {
               The altloc letter cannot recover the difference, because its guarantee is purely local:
               within a small region, alternate A goes with A and never with B. It says nothing about
               whether A at one residue and A two hundred residues away are the same physical state,
-              and — as section 04 shows in deposited data — two neighbouring parts of one structure
+              and — as <Ref to="limit">where the letter stops</Ref> shows in deposited data — two
+              neighbouring parts of one structure
               routinely use different letter sets. Long-range correlation is the fact that is missing.
             </p>
           </Section>
 
-          {/* ------------------------------------------------------------------ 02 */}
-          <Section n="02" id="requirements" title="Requirements, and the one hard constraint">
+          <Section id="requirements" title="Requirements, and the one hard constraint">
             <p>
               Three kinds of program read a coordinate file, and an encoding of heterogeneity has to
               satisfy all of them at once. Refinement programs re-fit the model against the data, so a
@@ -192,8 +269,9 @@ export default function ProposalPage() {
             </p>
           </Section>
 
-          {/* ------------------------------------------------------------------ 03 */}
-          <Section n="03" id="today" title="What mmCIF provides today">
+          <PartDivider part="II" title="What mmCIF encodes today" />
+
+          <Section id="today" title="What mmCIF provides today">
             <p>
               The baseline, before any heterogeneity machinery. A coordinate file is a spine of
               cross-references: a few small categories declare what the molecule is, and one large
@@ -202,6 +280,7 @@ export default function ProposalPage() {
               fully present: occupancy 1.00, no alternate-location letter.
             </p>
             <StageFigure
+              id="1EJG_minimal"
               fileUrl="/examples/het/1EJG_minimal.cif"
               view={{ representation: "ball-and-stick", colorTheme: "element-symbol" }}
               height="440px"
@@ -217,6 +296,7 @@ export default function ProposalPage() {
               it is single-conformer and shared.
             </p>
             <StageFigure
+              id="1EJG_rotamer"
               fileUrl="/examples/het/1EJG_rotamer.cif"
               view={{ representation: "ball-and-stick", colorTheme: "alt-loc" }}
               height="440px"
@@ -235,8 +315,7 @@ export default function ProposalPage() {
             </p>
           </Section>
 
-          {/* ------------------------------------------------------------------ 04 */}
-          <Section n="04" id="limit" title="Where the letter stops">
+          <Section id="limit" title="Where the letter stops">
             <p>
               The mechanism above works because everything it relates sits inside one residue. It stops
               working as soon as a relationship spans more than one.
@@ -256,6 +335,7 @@ export default function ProposalPage() {
               wrong. This is the file as it exists today — <C>_atom_site</C> and nothing else.
             </p>
             <StageFigure
+              id="5E1N_ca_site-deposited"
               fileUrl="/examples/het/5E1N_ca_site.cif"
               view={{ representation: "ball-and-stick", colorTheme: "alt-loc" }}
               het={false}
@@ -266,8 +346,9 @@ export default function ProposalPage() {
             />
           </Section>
 
-          {/* ------------------------------------------------------------------ 05 */}
-          <Section n="05" id="categories" title="The proposed categories">
+          <PartDivider part="III" title="The proposal" />
+
+          <Section id="categories" title="The proposed categories">
             <p>
               The extension is four optional categories that point <em>into</em> <C>_atom_site</C>{" "}
               through its existing keys, without changing a byte of it. Three carry the spine; the
@@ -286,32 +367,132 @@ export default function ProposalPage() {
             </p>
           </Section>
 
-          {/* ------------------------------------------------------------------ 06 */}
-          <Section n="06" id="networks" title="Naming a network">
+          <Section id="prototype" title="The existing prototype, and the column it adds">
             <p>
-              Two small side tables fix the previous section&rsquo;s file. <C>_pdbx_alt_groups</C> names
-              a <em>network</em> — a set of atoms that together constitute one state — by chain, residue
-              range and altloc letter. <C>_pdbx_heterogeneity_hierarchy</C> then places each network in a
-              tree and assigns it a <C>coexistence_group_id</C>: the mutually-exclusive set it belongs
-              to, which is exactly what a crystallographer calls an occupancy group.
+              There is already an annotated file. The diffuse folks&rsquo; own 5E1N —{" "}
+              <C>5E1N_hierarchy_20250423.cif</C>, the source of the group names used on this page —
+              carries <C>_pdbx_heterogeneity_hierarchy</C> and <C>_pdbx_state_coexistence</C>, and 148
+              named <em>heterogeneity groups</em> — their term for what <C>_pdbx_alt_groups</C> calls a
+              network. It has no membership table. Instead it adds a twenty-second column to the
+              coordinate table, <C>_atom_site.pdbx_heterogeneity_id</C>: one token per atom, naming the
+              group that atom belongs to.
+            </p>
+            <p>
+              That is exactly the per-atom route <Ref to="requirements">the requirements</Ref> rule
+              out, so the disagreement has to be met rather than stepped around. It is worth being
+              precise about what the column buys, because it buys something real — and it is the case of{" "}
+              <Ref to="subresidue">membership below the residue</Ref> that buys it.
+            </p>
+            <p>
+              Gln8 again, this time as the diffuse folks encoded it. Its amide hydrogen and its side
+              chain carry <em>the same</em> <C>label_alt_id</C> = A and land in different groups, with
+              different occupancies and even different numbers of alternates — three on the hydrogen,
+              two on the side chain:
+            </p>
+            <PrototypeGln8 />
+            <p>
+              The per-atom column separates them effortlessly, because every atom names its own group
+              and nothing has to be inferred from a key. There are 28 such (chain, residue, altloc)
+              triples in that file whose atoms fall in two different groups; a table keyed only on
+              chain, residue range and letter would collapse every one of them.
+            </p>
+            <p>
+              But that is the case <C>label_atom_id</C> exists for, and the figure in{" "}
+              <Ref to="subresidue">membership below the residue</Ref> is this same residue encoded the
+              other way: the amide hydrogen is claimed by one membership row naming that atom, the side
+              chain by another, and <C>_atom_site</C> is not touched. The 28 triples cost 28 extra rows
+              in a side table — not a column on every atom of every structure in the archive.
+            </p>
+            <p>
+              The prototype in fact already carries the membership key; it just does not carry it
+              anywhere a program can reach. Its group <em>names</em> are strings like <C>A8A</C> —
+              chain A, residue 8, alternate A — and <C>A6A_to_A7A</C>, a range. That is precisely the
+              tuple <C>_pdbx_alt_groups</C> declares as typed columns, encoded instead as an opaque name
+              that nothing can parse, which is why a per-atom column is then needed to do the join. (The
+              names are not always a clean range: <C>A6B_to_A7C</C> changes letter mid-group, which is
+              two membership rows sharing one <C>alt_group_id</C> — a case the string handles by
+              concatenation and the table handles by having two rows.)
+            </p>
+            <p>
+              So the two encodings hold the same information, and the choice between them is a choice
+              about who pays. A column on <C>_atom_site</C> is paid by every reader and every refinement
+              program in existence, on every file, forever — including the overwhelming majority that
+              carry no heterogeneity annotation at all. A membership table is paid by the programs that
+              want to use it, in one extra join. That asymmetry is the whole of the argument, and it is
+              why this proposal keeps the coordinate table closed.
+            </p>
+          </Section>
+
+          <Section id="pattern" title="One pattern, three layers">
+            <p>
+              Everything above, and everything still to come, is the same idea applied three times. A
+              piece of meaning gets a frugal default that costs nothing on an ordinary file, plus an
+              explicit escape hatch for the rare case the default cannot reach. Membership has already
+              shown both layers: a residue range by default, <C>label_atom_id</C> when a residue must
+              split. Exclusivity will show both in <Ref to="exclusions">metals and exclusions</Ref>.
+              The occupancy layer completes the symmetry in{" "}
+              <Ref to="occupancy">portable occupancy</Ref> and{" "}
+              <Ref to="graph">a graph the tree cannot hold</Ref>.
+            </p>
+            <LayersDiagram />
+            <p>
+              Reading it as a layer rather than a bolt-on is what keeps the additions small: the default
+              carries the common case at near-zero cost and maps straight onto what refinement programs
+              already do, while the escape hatch carries the genuinely hard relations and is reached for
+              only when the tree cannot speak.
+            </p>
+          </Section>
+
+          <Section id="occupancy" title="Making the occupancy specification portable">
+            <p>
+              The occupancy <em>numbers</em> survive deposition. The <em>specification</em> that produced
+              them does not. Whether two alternates were constrained to be complementary or merely happen
+              to sum to one, and whether a group&rsquo;s total was refined or held fixed, lives in the
+              refinement program&rsquo;s keyword file and is discarded. Three optional columns on the
+              hierarchy carry it back — <C>occupancy_completeness</C> (the sum rule),{" "}
+              <C>occupancy_refine_flag</C> (refined or fixed) and <C>occupancy_value</C> (the held value)
+              — and a fourth, <C>state_kind</C>, records whether an alternate is conformational (the same
+              thing in a different pose) or compositional (something present or absent).
+            </p>
+            <p>This maps onto what programs already do, in three tiers:</p>
+            <TierTable />
+            <StageFigure
+              id="7HHS_apo_bound_occ"
+              fileUrl="/examples/het/7HHS_apo_bound_occ.cif"
+              het
+              codeTitle="7HHS_apo_bound_occ — the nested tree + the occupancy specification"
+              caption="The same structure as the nested-occupancy figure, now carrying completeness / refine flag / value / kind. apo + bound = 1 is complete under the root (tier 2). pose_1 + pose_2 = occupancy(bound) is complete under a refinable parent — tier 3, which no mainstream program fits today. A viewer that ignores the extra columns draws exactly what it drew before."
+            />
+          </Section>
+
+          <PartDivider part="IV" title="The cases" />
+
+          <Section id="networks" title="Naming a network">
+            <p>
+              Two small side tables fix the file from <Ref to="limit">where the letter stops</Ref>.{" "}
+              <C>_pdbx_alt_groups</C> names a <em>network</em> — a set of atoms that together constitute
+              one state — by chain, residue range and altloc letter.{" "}
+              <C>_pdbx_heterogeneity_hierarchy</C> then places each network in a tree and assigns it a{" "}
+              <C>coexistence_group_id</C>: the mutually-exclusive set it belongs to, which is exactly
+              what a crystallographer calls an occupancy group.
             </p>
             <p>
               Here the two stretches become six named networks in two occupancy groups. The correlation
               is now written down: one name spans a whole stretch of the chain, and each group maps
-              directly onto an ordinary occupancy group that sums to one. The atoms are unchanged from
-              section 04 — only the two side tables are added. Click a network below the viewer to
-              highlight the rows that define it.
+              directly onto an ordinary occupancy group that sums to one. The atoms are unchanged from{" "}
+              <Ref to="limit">where the letter stops</Ref> — only the two side tables are added. Click a
+              network below the viewer to highlight the rows that define it.
             </p>
             <StageFigure
+              id="5E1N_ca_site"
               fileUrl="/examples/het/5E1N_ca_site.cif"
               het
               codeTitle="5E1N_ca_site — annotated: 6 networks in 2 occupancy groups"
-              caption="The same deposited atoms as section 04. The network definitions are the working group's own, from the annotated 5E1N file, clipped to the carved residue range. _struct_conn carries the calcium bonds, which are altloc-specific — Thr26's carbonyl oxygen reaches the ion at 2.10, 2.33, 2.45 and 2.65 Å in the four alternates — and so cannot be reconstructed from a distance cutoff."
+              caption="The same deposited atoms, now annotated. The grouping is the diffuse folks' own, from the annotated 5E1N file, clipped to the carved residue range. _struct_conn carries the calcium bonds, which are altloc-specific — Thr26's carbonyl oxygen reaches the ion at 2.10, 2.33, 2.45 and 2.65 Å in the four alternates — and so cannot be reconstructed from a distance cutoff."
             />
           </Section>
 
-          {/* ------------------------------------------------------------------ 07 */}
-          <Section n="07" id="subresidue" title="Membership below the residue">
+          <Section id="subresidue" title="Membership below the residue">
             <p>
               A residue-range key is enough almost everywhere, but not everywhere. A network boundary
               can fall <em>inside</em> a residue, and then the key fails.
@@ -332,89 +513,15 @@ export default function ProposalPage() {
               <C>_atom_site</C> left alone.
             </p>
             <StageFigure
+              id="5E1N_gln8_split"
               fileUrl="/examples/het/5E1N_gln8_split.cif"
               het
               codeTitle="5E1N_gln8_split — label_atom_id splits a residue below the letter"
-              caption="PDB 5E1N, residues 6–8. Hydrogens are omitted except Gln8's amide H, which is the atom in question. This is not a contrived case: in the working group's annotated 5E1N there are 28 (chain, residue, altloc) triples whose atoms fall in two different networks, and it is why that file resorted to a per-atom column — section 08 puts the two encodings of this residue side by side."
+              caption="PDB 5E1N, residues 6–8. Hydrogens are omitted except Gln8's amide H, which is the atom in question. This is not a contrived case: in the diffuse folks' annotated 5E1N there are 28 (chain, residue, altloc) triples whose atoms fall in two different groups, and it is why that file resorted to a per-atom column — the prototype section puts the two encodings of this residue side by side."
             />
           </Section>
 
-          {/* ------------------------------------------------------------------ 08 */}
-          <Section n="08" id="prototype" title="The existing prototype, and the column it adds">
-            <p>
-              There is already an annotated file. The working group&rsquo;s own 5E1N —{" "}
-              <C>5E1N_hierarchy_20250423.cif</C>, the source of every network name used on this page —
-              carries <C>_pdbx_heterogeneity_hierarchy</C> and <C>_pdbx_state_coexistence</C>, and 148
-              named networks. It has no membership table. Instead it adds a twenty-second column to the
-              coordinate table, <C>_atom_site.pdbx_heterogeneity_id</C>: one token per atom, naming the
-              network that atom belongs to.
-            </p>
-            <p>
-              That is exactly the per-atom route section 02 rules out, so the disagreement has to be met
-              rather than stepped around. It is worth being precise about what the column buys, because
-              it buys something real — and it is the case of section 07 that buys it.
-            </p>
-            <p>
-              Gln8 again, this time as the working group encoded it. Its amide hydrogen and its side
-              chain carry <em>the same</em> <C>label_alt_id</C> = A and land in different networks, with
-              different occupancies and even different numbers of alternates — three on the hydrogen,
-              two on the side chain:
-            </p>
-            <PrototypeGln8 />
-            <p>
-              The per-atom column separates them effortlessly, because every atom names its own network
-              and nothing has to be inferred from a key. There are 28 such (chain, residue, altloc)
-              triples in that file whose atoms fall in two different networks; a table keyed only on
-              chain, residue range and letter would collapse every one of them.
-            </p>
-            <p>
-              But that is the case <C>label_atom_id</C> exists for, and the figure in section 07 is this
-              same residue encoded the other way: the amide hydrogen is claimed by one membership row
-              naming that atom, the side chain by another, and <C>_atom_site</C> is not touched. The 28
-              triples cost 28 extra rows in a side table — not a column on every atom of every structure
-              in the archive.
-            </p>
-            <p>
-              The prototype in fact already carries the membership key; it just does not carry it
-              anywhere a program can reach. Its network <em>names</em> are strings like <C>A8A</C> —
-              chain A, residue 8, alternate A — and <C>A6A_to_A7A</C>, a range. That is precisely the
-              tuple <C>_pdbx_alt_groups</C> declares as typed columns, encoded instead as an opaque name
-              that nothing can parse, which is why a per-atom column is then needed to do the join. (The
-              names are not always a clean range: <C>A6B_to_A7C</C> changes letter mid-network, which is
-              two membership rows sharing one <C>alt_group_id</C> — a case the string handles by
-              concatenation and the table handles by having two rows.)
-            </p>
-            <p>
-              So the two encodings hold the same information, and the choice between them is a choice
-              about who pays. A column on <C>_atom_site</C> is paid by every reader and every refinement
-              program in existence, on every file, forever — including the overwhelming majority that
-              carry no heterogeneity annotation at all. A membership table is paid by the programs that
-              want to use it, in one extra join. That asymmetry is the whole of the argument, and it is
-              why this proposal keeps the coordinate table closed.
-            </p>
-          </Section>
-
-          {/* ------------------------------------------------------------------ 09 */}
-          <Section n="09" id="pattern" title="One pattern, three layers">
-            <p>
-              Everything above, and everything still to come, is the same idea applied three times. A
-              piece of meaning gets a frugal default that costs nothing on an ordinary file, plus an
-              explicit escape hatch for the rare case the default cannot reach. Membership has already
-              shown both layers: a residue range by default, <C>label_atom_id</C> when a residue must
-              split. Exclusivity will show both in section 11. The occupancy layer completes the
-              symmetry in sections 12 and 13.
-            </p>
-            <LayersDiagram />
-            <p>
-              Reading it as a layer rather than a bolt-on is what keeps the additions small: the default
-              carries the common case at near-zero cost and maps straight onto what refinement programs
-              already do, while the escape hatch carries the genuinely hard relations and is reached for
-              only when the tree cannot speak.
-            </p>
-          </Section>
-
-          {/* ------------------------------------------------------------------ 09 */}
-          <Section n="10" id="nesting" title="Nested occupancy">
+          <Section id="nesting" title="Nested occupancy">
             <p>
               Occupancy groups do not always sum to one. When a choice exists only inside another
               choice, the inner group sums to its <em>parent&rsquo;s</em> occupancy — and the tree
@@ -438,20 +545,21 @@ export default function ProposalPage() {
               mechanism; only a node in a tree can carry it.
             </p>
             <StageFigure
+              id="7HHS_apo_bound"
               fileUrl="/examples/het/7HHS_apo_bound.cif"
               het
               codeTitle="7HHS_apo_bound — a nested tree: apo / bound → pose_1, pose_2"
-              caption="PDB 7HHS. Three legal whole-molecule states: apo (0.78), bound + pose_1 (0.13), bound + pose_2 (0.09). The nesting forbids the rest. Note also that the ligand's letters (B, C) do not line up with the pocket's (A, B) — the same local-letter problem as section 04, in a second entry."
+              caption="PDB 7HHS. Three legal whole-molecule states: apo (0.78), bound + pose_1 (0.13), bound + pose_2 (0.09). The nesting forbids the rest. Note also that the ligand's letters (B, C) do not line up with the pocket's (A, B) — the same local-letter problem seen earlier, in a second entry."
             />
           </Section>
 
-          {/* ------------------------------------------------------------------ 10 */}
-          <Section n="11" id="exclusions" title="Metals, and the optional exclusion list">
+          <Section id="exclusions" title="Metals, and the optional exclusion list">
             <p>
-              The metal site of section 06 is where <C>_struct_conn</C> earns its place: the calcium
-              bonds are altloc-specific, so they cannot be reconstructed from a distance cutoff and must
-              be recorded. The honest cost is that the membership rows and the bond records become two
-              separate pointers into <C>_atom_site</C> that a depositor has to keep in sync.
+              The metal site of <Ref to="networks">naming a network</Ref> is where <C>_struct_conn</C>{" "}
+              earns its place: the calcium bonds are altloc-specific, so they cannot be reconstructed
+              from a distance cutoff and must be recorded. The honest cost is that the membership rows
+              and the bond records become two separate pointers into <C>_atom_site</C> that a depositor
+              has to keep in sync.
             </p>
             <p>
               Exclusivity, meanwhile, is free within an occupancy group — siblings exclude each other by
@@ -464,12 +572,13 @@ export default function ProposalPage() {
               occupancy. They live in different branches — one is a rotamer, the other a solvent site — so
               nothing in the hierarchy forbids them co-occurring. But in alternate B the guanidinium
               nitrogen lands 2.14 Å from the water: not a hydrogen bond, a clash. One <C>NOT</C> row
-              records it. This is the only exclusion in the whole of the working group&rsquo;s annotated
+              records it. This is the only exclusion in the whole of the diffuse folks&rsquo; annotated
               5E1N, which is the argument for keeping the category optional, sparse, and{" "}
               <C>NOT</C>-only. <C>AND</C> and <C>OR</C> were deliberately left out: they admit several
               readings.
             </p>
             <StageFigure
+              id="5E1N_arg74_clash"
               fileUrl="/examples/het/5E1N_arg74_clash.cif"
               het
               height="520px"
@@ -478,30 +587,7 @@ export default function ProposalPage() {
             />
           </Section>
 
-          {/* ------------------------------------------------------------------ 11 */}
-          <Section n="12" id="occupancy" title="Making the occupancy specification portable">
-            <p>
-              The occupancy <em>numbers</em> survive deposition. The <em>specification</em> that produced
-              them does not. Whether two alternates were constrained to be complementary or merely happen
-              to sum to one, and whether a group&rsquo;s total was refined or held fixed, lives in the
-              refinement program&rsquo;s keyword file and is discarded. Three optional columns on the
-              hierarchy carry it back — <C>occupancy_completeness</C> (the sum rule),{" "}
-              <C>occupancy_refine_flag</C> (refined or fixed) and <C>occupancy_value</C> (the held value)
-              — and a fourth, <C>state_kind</C>, records whether an alternate is conformational (the same
-              thing in a different pose) or compositional (something present or absent).
-            </p>
-            <p>This maps onto what programs already do, in three tiers:</p>
-            <TierTable />
-            <StageFigure
-              fileUrl="/examples/het/7HHS_apo_bound_occ.cif"
-              het
-              codeTitle="7HHS_apo_bound_occ — the nested tree + the occupancy specification"
-              caption="The same structure as section 10, now carrying completeness / refine flag / value / kind. apo + bound = 1 is complete under the root (tier 2). pose_1 + pose_2 = occupancy(bound) is complete under a refinable parent — tier 3, which no mainstream program fits today. A viewer that ignores the extra columns draws exactly what it drew before."
-            />
-          </Section>
-
-          {/* ------------------------------------------------------------------ 12 */}
-          <Section n="13" id="graph" title="A graph the tree cannot hold">
+          <Section id="graph" title="A graph the tree cannot hold">
             <p>
               This is the hard case, and the one example on this page that is constructed rather than
               deposited — it has no counterpart in the archive. Two adjacent pockets: the top holds a
@@ -514,8 +600,8 @@ export default function ProposalPage() {
               <em>independent</em>: the state list below the viewer is the full cartesian product of the
               two pockets, and it includes states in which the ligand sits in the top pocket while a
               glycol sits in the bottom one. Those states are not real. This is precisely the ambiguity
-              of section 01. The one fact the tree cannot hold is the cross-pocket coupling — the bottom
-              pocket is ordered only within the EDO1 population:
+              of <Ref to="problem">the missing quantity</Ref>. The one fact the tree cannot hold is the
+              cross-pocket coupling — the bottom pocket is ordered only within the EDO1 population:
             </p>
             <Equation>O(EDO1) = O(EDO2) + O(EDO3)</Equation>
             <p>
@@ -526,6 +612,7 @@ export default function ProposalPage() {
             </p>
             <DagDiagram />
             <StageFigure
+              id="constructed_two_pocket"
               fileUrl="/examples/het/constructed_two_pocket.cif"
               het
               codeTitle="constructed_two_pocket — two pockets + a linear occupancy constraint"
@@ -533,17 +620,20 @@ export default function ProposalPage() {
             />
           </Section>
 
-          {/* ------------------------------------------------------------------ 13 */}
-          <Section n="14" id="open" title="Open problems">
+          <PartDivider part="V" title="Open problems" />
+
+          <Section id="open">
             <p>
-              Section 13 moved the boundary from &ldquo;inexpressible&rdquo; to &ldquo;expressible but
-              not yet fitted&rdquo;. Two things remain genuinely open.
+              <Ref to="graph">A graph the tree cannot hold</Ref> moved the boundary from{" "}
+              &ldquo;inexpressible&rdquo; to &ldquo;expressible but not yet fitted&rdquo;. Two things
+              remain genuinely open.
             </p>
             <h3 className="pt-2 text-[15px] font-semibold text-slate-900">How to spell the graph</h3>
             <p>
               The graph above can be encoded two ways, and the choice is not settled. Either keep the
-              single-parent tree and restore the dropped edge with a <C>linear</C> constraint — what
-              section 13 does, and what the viewer here implements — or make the hierarchy itself a graph,
+              single-parent tree and restore the dropped edge with a <C>linear</C> constraint — what{" "}
+              <Ref to="graph">a graph the tree cannot hold</Ref> does, and what the viewer here
+              implements — or make the hierarchy itself a graph,
               with a small <C>_pdbx_heterogeneity_edge</C> table carrying typed ties (<C>sum_to</C>,{" "}
               <C>equal</C>) instead of coefficient equations. Both hold this case; neither reaches past
               it. Which becomes the standard is an open design question.
@@ -625,7 +715,7 @@ function CategoryReference() {
       name: "_pdbx_heterogeneity_hierarchy",
       role: "tree and occupancy grouping",
       optional: false,
-      desc: "Places each network in the tree and assigns its occupancy (coexistence) group. Optionally carries the occupancy specification of section 12.",
+      desc: "Places each network in the tree and assigns its occupancy (coexistence) group. Optionally carries the occupancy specification of the portable-occupancy layer.",
       cols: "alt_group_id · coexistence_group_id · parent_alt_groups_id · occupancy_*? · state_kind?",
     },
     {
@@ -639,7 +729,7 @@ function CategoryReference() {
       name: "_pdbx_occupancy_constraint",
       role: "occupancy relations",
       optional: true,
-      desc: "The escape hatch for an occupancy tie a single group cannot express — the graph of section 13. With its _term table it is a portable linear equation. Absent from ordinary files.",
+      desc: "The escape hatch for an occupancy tie a single group cannot express — the two-pocket graph case. With its _term table it is a portable linear equation. Absent from ordinary files.",
       cols: "id · type · target_group_id · target_value · enforced · + _term.coefficient",
     },
   ];
@@ -715,10 +805,10 @@ function TierTable() {
   );
 }
 
-// Gln8 exactly as it appears in the working group's annotated 5E1N (source_docs/
+// Gln8 exactly as it appears in the diffuse folks' annotated 5E1N (source_docs/
 // 5E1N_hierarchy_20250423.cif). Read straight out of that file: the per-atom pdbx_heterogeneity_id
 // column and the .id -> .name mapping from its _pdbx_heterogeneity_hierarchy. The two `split` rows
-// are the point — same residue, same letter, different network.
+// are the point — same residue, same letter, different group.
 function PrototypeGln8() {
   const rows: {
     part?: string;
@@ -739,7 +829,7 @@ function PrototypeGln8() {
   return (
     <div className="my-5 border-y border-slate-100 py-4">
       <div className="mb-3 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
-        Gln8 in the working group&rsquo;s annotated 5E1N
+        Gln8 in the diffuse folks&rsquo; annotated 5E1N
       </div>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left text-[12.5px]">
@@ -750,7 +840,7 @@ function PrototypeGln8() {
               <th className="py-2 pr-3 font-semibold">label_alt_id</th>
               <th className="py-2 pr-3 font-semibold">occupancy</th>
               <th className="py-2 pr-3 font-semibold">pdbx_heterogeneity_id</th>
-              <th className="py-2 font-semibold">network</th>
+              <th className="py-2 font-semibold">heterogeneity group</th>
             </tr>
           </thead>
           <tbody>
@@ -772,7 +862,7 @@ function PrototypeGln8() {
       </div>
       <p className="mt-3 text-[12px] leading-relaxed text-slate-500">
         The two highlighted rows are the whole difficulty. Both are &ldquo;chain A, residue 8, alternate
-        A&rdquo;. One is 0.64 and belongs to the residues 6–7 network; the other is 0.56 and belongs to
+        A&rdquo;. One is 0.64 and belongs to the residues 6–7 group; the other is 0.56 and belongs to
         Gln8&rsquo;s own. No key built from chain, residue and letter can tell them apart — which is why
         this file reached for a per-atom column, and why{" "}
         <code className="font-mono text-[11px] text-slate-700">label_atom_id</code> exists.
@@ -937,7 +1027,7 @@ function SumVsProduct() {
         <div className="mt-0.5 font-mono text-[11px] text-slate-500">0.5 = 0.3 + 0.2</div>
         <p className="mt-2 text-[12.5px] leading-relaxed text-slate-600">
           A weighted sum of occupancies. One <span className="font-mono">linear</span> constraint row
-          holds it. This is the graph of section 13.
+          holds it. This is the <Ref to="graph">graph the tree cannot hold</Ref>.
         </p>
       </div>
       <div>
@@ -976,7 +1066,7 @@ function ExampleGlossary() {
       file: "5E1N_ca_site",
       site: "5E1N · residues 20–31, Ca 203",
       shows:
-        "Two correlated networks with different letter sets, coordinating one ion. Shown unannotated (§04) and annotated (§06). Carries the deposited altloc-specific metal bonds.",
+        "Two correlated networks with different letter sets, coordinating one ion. Shown unannotated and annotated. Carries the deposited altloc-specific metal bonds.",
     },
     {
       file: "5E1N_gln8_split",
@@ -1009,7 +1099,14 @@ function ExampleGlossary() {
     <dl className="mt-3 space-y-3">
       {rows.map((r) => (
         <div key={r.file}>
-          <dt className="break-all font-mono text-[10.5px] text-slate-600">{r.file}</dt>
+          <dt className="break-all font-mono text-[10.5px]">
+            <a
+              href={`#${r.file}`}
+              className="text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+            >
+              {r.file}
+            </a>
+          </dt>
           <dd className="text-[10px] text-slate-400">{r.site}</dd>
           <dd className="mt-0.5 text-[11px] leading-snug text-slate-500">{r.shows}</dd>
         </div>

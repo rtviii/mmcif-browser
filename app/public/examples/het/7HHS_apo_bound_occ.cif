@@ -215,6 +215,8 @@ HETATM 148 N N6  C A1A7O D 2 .  ? -45.296 -29.362 7.657  0.09 13.20 ?  202 A1A7O
 HETATM 149 N N7  C A1A7O D 2 .  ? -44.130 -29.617 5.503  0.09 13.27 ?  202 A1A7O A N7  1
 HETATM 150 O O1  C A1A7O D 2 .  ? -43.532 -32.276 3.043  0.09 15.00 ?  202 A1A7O A O1  1
 #
+# proposed heterogeneity extension -- the categories below are NOT part of the
+# current PDBx/mmCIF dictionary; they are what this page proposes to add.
 loop_
 _pdbx_alt_groups.id
 _pdbx_alt_groups.alt_group_id

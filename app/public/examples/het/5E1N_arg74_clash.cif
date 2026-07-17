@@ -12,7 +12,7 @@ data_5E1N_arg74_clash
 # networks are not siblings and no occupancy group relates them.
 #
 # That is the entire job of _pdbx_state_coexistence: a sparse NOT-only list for the rare
-# cross-branch clash. This one row is the only exclusion in the whole of the working group's
+# cross-branch clash. This one row is the only exclusion in the whole of the diffuse folks'
 # annotated 5E1N -- which is the argument for making the category optional and keeping it
 # NOT-only. AND / OR were deliberately left out: they admit several readings.
 #
@@ -99,6 +99,8 @@ ATOM   57 N NZ  D LYS A 1 75 ? 38.045 0.951  5.198   0.24 27.16 ? 75  LYS A NZ  
 HETATM 58 O O   E HOH I 4 .  ? 34.705 8.768  4.862   0.54 22.88 ? 468 HOH A O   1
 HETATM 59 O O   E HOH I 4 .  ? 42.490 4.462  -13.984 0.35 19.92 ? 469 HOH A O   1
 #
+# proposed heterogeneity extension -- the categories below are NOT part of the
+# current PDBx/mmCIF dictionary; they are what this page proposes to add.
 loop_
 _pdbx_alt_groups.id
 _pdbx_alt_groups.alt_group_id

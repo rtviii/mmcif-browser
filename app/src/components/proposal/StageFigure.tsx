@@ -21,7 +21,13 @@ type Target =
   | { kind: "network"; id: string }
   | { kind: "atom"; chain: string; seq: number; atomId: string; altId?: string };
 
+// Every annotated example begins its proposed block with this category, so it is the uniform cut
+// point for the dict-switch's "current mmCIF" view.
+const PROPOSED_CUT = "_pdbx_alt_groups";
+
 export interface StageFigureProps {
+  /** DOM id applied to the <figure>, so the example glossary can link to it. */
+  id?: string;
   fileUrl: string;
   view?: StructureView;
   het?: boolean;
@@ -36,6 +42,7 @@ export interface StageFigureProps {
 }
 
 export function StageFigure({
+  id,
   fileUrl,
   view,
   het = false,
@@ -60,6 +67,7 @@ export function StageFigure({
   const [flashLines, setFlashLines] = useState<ReadonlySet<number> | null>(null);
 
   const panelRef = useRef<CifPanelHandle>(null);
+  const figureRef = useRef<HTMLElement>(null);
   const flashTimer = useRef<number | null>(null);
 
   const onReady = useCallback((v: MolstarViewerInstance | null) => setViewer(v), []);
@@ -101,6 +109,28 @@ export function StageFigure({
   useEffect(() => () => {
     if (flashTimer.current) window.clearTimeout(flashTimer.current);
   }, []);
+
+  // A glossary link points at this figure's id. Figures are collapsed by default, so arriving via
+  // the hash must also open the target — otherwise the reader lands on a bare toggle button. This
+  // drives the same `open` state the button does, so the lazy fetch/mount still runs, for this one
+  // figure only.
+  useEffect(() => {
+    if (!id) return;
+    const openIfTargeted = () => {
+      if (window.location.hash === `#${id}`) {
+        setOpen(true);
+        figureRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    };
+    openIfTargeted();
+    window.addEventListener("hashchange", openIfTargeted);
+    return () => window.removeEventListener("hashchange", openIfTargeted);
+  }, [id]);
+
+  // The dict-switch cut is uniform (PROPOSED_CUT) for annotated figures. An explicit truncateBefore
+  // (the "where the letter stops" figure) stays a fixed one-way cut with no toggle.
+  const cutMarker = truncateBefore ?? (het ? PROPOSED_CUT : undefined);
+  const showSwitch = het && !truncateBefore;
 
   const doc = useMemo<CifDocument | null>(() => (cif ? segmentDocument(cif) : null), [cif]);
 
@@ -312,7 +342,7 @@ export function StageFigure({
   return (
     // Collapsed the figure sits in the prose column, so it reads as a line in the text rather than
     // interrupting it. Expanded it spans the full grid (see .doc-grid / .bleed in globals.css).
-    <figure className={`my-7 ${open ? "bleed" : ""}`}>
+    <figure ref={figureRef} id={id} className={`my-7 ${open ? "bleed" : ""}`}>
       <div className={open ? "mx-auto max-w-[1800px] px-6" : ""}>
         <button
           type="button"
@@ -350,7 +380,8 @@ export function StageFigure({
                   doc={doc}
                   molFile={molFile}
                   title={fileUrl.split("/").pop()}
-                  truncateBefore={truncateBefore}
+                  truncateBefore={cutMarker}
+                  dictSwitch={showSwitch}
                   marks={marks}
                   hoverLines={hoverLines}
                   flashLines={flashLines}
