@@ -135,8 +135,8 @@ export const EXAMPLE_GROUPS: ExampleGroup[] = [
   {
     // Local sites carved out of deposited entries by heterogeneity-proposal/scripts/carve_examples.py,
     // then annotated with the proposed _pdbx_alt_groups / _pdbx_heterogeneity_hierarchy /
-    // _pdbx_state_coexistence / _pdbx_occupancy_constraint categories. The coordinates are copied
-    // verbatim from the archive (constructed_two_pocket excepted, and labelled as such); only the
+    // _pdbx_state_coexistence / _pdbx_occupancy_relationship categories. The coordinates are copied
+    // verbatim from the archive (the two constructed files excepted, and labelled as such); only the
     // annotation is new, since by definition it does not exist in the archive yet. These are the same
     // files the /proposal page walks through. Switch the dictionary to "het" (top bar) to see the new
     // categories linked, and use the heterogeneity controls to colour by network / step through the
@@ -199,13 +199,31 @@ export const EXAMPLE_GROUPS: ExampleGroup[] = [
         signature: { category: "pdbx_state_coexistence", note: "a cross-branch clash: the rotamer and the solvent site sit in different branches, so nothing in the tree forbids them — the one case where the optional NOT list earns its place" },
       },
       {
+        id: "constructed_two_pocket_flat",
+        pdbId: "constructed",
+        file: { url: "/examples/het/constructed_two_pocket_flat.cif", name: "constructed_two_pocket_flat.cif" },
+        title: "Two pockets, parented wrong",
+        blurb: "constructed · both pockets hang off base, so the state list admits pairs the occupancies forbid",
+        view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
+        signature: { category: "pdbx_heterogeneity_hierarchy", note: "a worked negative: read alone this tree says the two pockets vary independently, so a consumer enumerates Ligand together with EDO2 — but the bottom pocket sums to 0.50, exactly O(EDO1), so it is ordered only within the EDO1 population. Compare constructed_two_pocket, which is the same atoms with the right parent" },
+      },
+      {
         id: "constructed_two_pocket",
         pdbId: "constructed",
         file: { url: "/examples/het/constructed_two_pocket.cif", name: "constructed_two_pocket.cif" },
-        title: "The two-pocket graph",
-        blurb: "constructed · O(EDO1) = O(EDO2) + O(EDO3), which the tree cannot hold",
+        title: "Two pockets, parented right",
+        blurb: "constructed · the bottom pocket nests under EDO1, and the coupling follows from the tree",
         view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
-        signature: { category: "pdbx_occupancy_constraint", note: "the only constructed example here — no deposited counterpart exists. The tree reads the two pockets as independent; the linear constraint restores the edge it drops" },
+        signature: { category: "pdbx_heterogeneity_hierarchy", note: "the same atoms and occupancies as constructed_two_pocket_flat, with EDO1 as the bottom pocket's parent. 0.30 + 0.20 = 0.50 = O(EDO1) then follows from the parent link, no escape hatch needed — the same shape as pose_1/pose_2 under bound in 7HHS" },
+      },
+      {
+        id: "constructed_ncs_lock",
+        pdbId: "constructed",
+        file: { url: "/examples/het/constructed_ncs_lock.cif", name: "constructed_ncs_lock.cif" },
+        title: "The cross-branch occupancy lock",
+        blurb: "constructed · two NCS copies held to one occupancy, which no parent link can say",
+        view: { representation: "ball-and-stick", colorTheme: "alt-loc" },
+        signature: { category: "pdbx_occupancy_relationship", note: "two NCS-related copies of a partial-occupancy glycol at the same occupancy. Neither site is the other's parent and no coexistence group holds both, so the hierarchy cannot relate them — this is what the optional relationship table exists for. Constructed of necessity: the restraint behind the equal occupancies is discarded at deposition" },
       },
     ],
   },

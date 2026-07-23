@@ -1,0 +1,121 @@
+data_constructed_ncs_lock
+#
+# CONSTRUCTED -- not deposited data. Two copies of a real 1EJG tripeptide related by a proper
+# NCS operator (a 2-fold, then a 16 A translation), each carrying one ethylene glycol built to
+# its correct internal geometry (C-C 1.512 A / C-O 1.423 A) in the equivalent site, at the same
+# partial occupancy. No deposited file can carry the tie itself: the restraint that produced the
+# equal occupancies is discarded at deposition, which is the gap this proposal is about.
+#
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+_atom_site.pdbx_formal_charge
+_atom_site.auth_seq_id
+_atom_site.auth_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_atom_id
+_atom_site.pdbx_PDB_model_num
+ATOM   1  N N   . ASN A 1 14 ? 6.892  4.356  3.906  1.00 1.62  ? 14  ASN A N   1
+ATOM   2  C CA  . ASN A 1 14 ? 7.323  3.600  2.746  1.00 1.56  ? 14  ASN A CA  1
+ATOM   3  C C   . ASN A 1 14 ? 6.137  3.150  1.887  1.00 1.55  ? 14  ASN A C   1
+ATOM   4  O O   . ASN A 1 14 ? 6.248  3.117  0.663  1.00 2.17  ? 14  ASN A O   1
+ATOM   5  C CB  . ASN A 1 14 ? 8.188  2.417  3.167  1.00 1.96  ? 14  ASN A CB  1
+ATOM   6  C CG  . ASN A 1 14 ? 9.563  2.858  3.654  1.00 2.40  ? 14  ASN A CG  1
+ATOM   7  O OD1 . ASN A 1 14 ? 10.051 3.925  3.246  1.00 3.33  ? 14  ASN A OD1 1
+ATOM   8  N ND2 . ASN A 1 14 ? 10.180 2.025  4.475  1.00 3.15  ? 14  ASN A ND2 1
+ATOM   9  N N   . VAL A 1 15 ? 4.992  2.817  2.503  1.00 1.46  ? 15  VAL A N   1
+ATOM   10 C CA  . VAL A 1 15 ? 3.809  2.515  1.695  1.00 1.45  ? 15  VAL A CA  1
+ATOM   11 C C   . VAL A 1 15 ? 3.309  3.772  0.970  1.00 1.47  ? 15  VAL A C   1
+ATOM   12 O O   . VAL A 1 15 ? 2.967  3.733  -0.207 1.00 1.77  ? 15  VAL A O   1
+ATOM   13 C CB  . VAL A 1 15 ? 2.718  1.853  2.546  1.00 1.79  ? 15  VAL A CB  1
+ATOM   14 C CG1 . VAL A 1 15 ? 1.390  1.798  1.795  1.00 2.75  ? 15  VAL A CG1 1
+ATOM   15 C CG2 . VAL A 1 15 ? 3.171  0.458  2.966  1.00 2.43  ? 15  VAL A CG2 1
+ATOM   16 N N   . CYS A 1 16 ? 3.265  4.910  1.697  1.00 1.55  ? 16  CYS A N   1
+ATOM   17 C CA  . CYS A 1 16 ? 2.853  6.168  1.085  1.00 1.54  ? 16  CYS A CA  1
+ATOM   18 C C   . CYS A 1 16 ? 3.680  6.497  -0.171 1.00 1.45  ? 16  CYS A C   1
+ATOM   19 O O   . CYS A 1 16 ? 3.159  7.037  -1.146 1.00 1.80  ? 16  CYS A O   1
+ATOM   20 C CB  . CYS A 1 16 ? 2.981  7.257  2.155  1.00 1.93  ? 16  CYS A CB  1
+ATOM   21 S SG  . CYS A 1 16 ? 2.571  8.931  1.593  1.00 2.20  ? 16  CYS A SG  1
+HETATM 22 C C1  A EDO B 2 .  ? 7.917  7.413  5.118  0.40 28.00 ? 601 EDO A C1  1
+HETATM 23 C C2  A EDO B 2 .  ? 9.429  7.413  5.118  0.40 28.00 ? 601 EDO A C2  1
+HETATM 24 O O1  A EDO B 2 .  ? 7.442  8.753  5.118  0.40 28.00 ? 601 EDO A O1  1
+HETATM 25 O O2  A EDO B 2 .  ? 9.904  6.073  5.118  0.40 28.00 ? 601 EDO A O2  1
+ATOM   26 N N   . ASN F 1 14 ? 19.151 3.567  3.906  1.00 1.62  ? 14  ASN B N   1
+ATOM   27 C CA  . ASN F 1 14 ? 18.720 4.323  2.746  1.00 1.56  ? 14  ASN B CA  1
+ATOM   28 C C   . ASN F 1 14 ? 19.906 4.773  1.887  1.00 1.55  ? 14  ASN B C   1
+ATOM   29 O O   . ASN F 1 14 ? 19.795 4.806  0.663  1.00 2.17  ? 14  ASN B O   1
+ATOM   30 C CB  . ASN F 1 14 ? 17.855 5.506  3.167  1.00 1.96  ? 14  ASN B CB  1
+ATOM   31 C CG  . ASN F 1 14 ? 16.480 5.065  3.654  1.00 2.40  ? 14  ASN B CG  1
+ATOM   32 O OD1 . ASN F 1 14 ? 15.992 3.998  3.246  1.00 3.33  ? 14  ASN B OD1 1
+ATOM   33 N ND2 . ASN F 1 14 ? 15.863 5.898  4.475  1.00 3.15  ? 14  ASN B ND2 1
+ATOM   34 N N   . VAL F 1 15 ? 21.051 5.106  2.503  1.00 1.46  ? 15  VAL B N   1
+ATOM   35 C CA  . VAL F 1 15 ? 22.234 5.408  1.695  1.00 1.45  ? 15  VAL B CA  1
+ATOM   36 C C   . VAL F 1 15 ? 22.734 4.151  0.970  1.00 1.47  ? 15  VAL B C   1
+ATOM   37 O O   . VAL F 1 15 ? 23.076 4.190  -0.207 1.00 1.77  ? 15  VAL B O   1
+ATOM   38 C CB  . VAL F 1 15 ? 23.325 6.070  2.546  1.00 1.79  ? 15  VAL B CB  1
+ATOM   39 C CG1 . VAL F 1 15 ? 24.653 6.125  1.795  1.00 2.75  ? 15  VAL B CG1 1
+ATOM   40 C CG2 . VAL F 1 15 ? 22.872 7.465  2.966  1.00 2.43  ? 15  VAL B CG2 1
+ATOM   41 N N   . CYS F 1 16 ? 22.778 3.013  1.697  1.00 1.55  ? 16  CYS B N   1
+ATOM   42 C CA  . CYS F 1 16 ? 23.190 1.755  1.085  1.00 1.54  ? 16  CYS B CA  1
+ATOM   43 C C   . CYS F 1 16 ? 22.363 1.426  -0.171 1.00 1.45  ? 16  CYS B C   1
+ATOM   44 O O   . CYS F 1 16 ? 22.884 0.886  -1.146 1.00 1.80  ? 16  CYS B O   1
+ATOM   45 C CB  . CYS F 1 16 ? 23.062 0.666  2.155  1.00 1.93  ? 16  CYS B CB  1
+ATOM   46 S SG  . CYS F 1 16 ? 23.472 -1.008 1.593  1.00 2.20  ? 16  CYS B SG  1
+HETATM 47 C C1  A EDO G 2 .  ? 18.126 0.510  5.118  0.40 28.00 ? 601 EDO B C1  1
+HETATM 48 C C2  A EDO G 2 .  ? 16.614 0.510  5.118  0.40 28.00 ? 601 EDO B C2  1
+HETATM 49 O O1  A EDO G 2 .  ? 18.601 -0.830 5.118  0.40 28.00 ? 601 EDO B O1  1
+HETATM 50 O O2  A EDO G 2 .  ? 16.139 1.850  5.118  0.40 28.00 ? 601 EDO B O2  1
+#
+# proposed heterogeneity extension -- the categories below are NOT part of the
+# current PDBx/mmCIF dictionary; they are what this page proposes to add.
+# the two sites sit in different branches and neither is the other's parent, so no parent link can say their occupancies are locked together
+loop_
+_pdbx_alt_groups.id
+_pdbx_alt_groups.alt_group_id
+_pdbx_alt_groups.auth_asym_id
+_pdbx_alt_groups.auth_seq_id_start
+_pdbx_alt_groups.auth_seq_id_end
+_pdbx_alt_groups.label_alt_id
+_pdbx_alt_groups.label_atom_id
+1 edo_A A 601 601 A .
+2 edo_B B 601 601 A .
+#
+loop_
+_pdbx_heterogeneity_hierarchy.alt_group_id
+_pdbx_heterogeneity_hierarchy.coexistence_group_id
+_pdbx_heterogeneity_hierarchy.parent_alt_groups_id
+_pdbx_heterogeneity_hierarchy.occupancy_completeness
+_pdbx_heterogeneity_hierarchy.occupancy_refine_flag
+_pdbx_heterogeneity_hierarchy.occupancy_value
+_pdbx_heterogeneity_hierarchy.state_kind
+base  .     .    .      .       1.0 .
+edo_A siteA base single refined .   compositional
+edo_B siteB base single refined .   compositional
+#
+loop_
+_pdbx_occupancy_relationship.id
+_pdbx_occupancy_relationship.type
+_pdbx_occupancy_relationship.target
+_pdbx_occupancy_relationship.enforced
+_pdbx_occupancy_relationship.details
+1 equal edo_A annotation 'NCS-related copies restrained to equal occupancy'
+#
+loop_
+_pdbx_occupancy_relationship_member.relationship_id
+_pdbx_occupancy_relationship_member.state_id
+1 edo_B
+#

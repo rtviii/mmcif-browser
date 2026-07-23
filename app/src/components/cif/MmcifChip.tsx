@@ -19,6 +19,7 @@ export function MmcifChip({
   selected = false,
   full = false,
   className,
+  href,
   onToggle,
   onRemove,
   onDigDeeper,
@@ -31,6 +32,11 @@ export function MmcifChip({
   /** inline variant only: replaces the default styling. For prose that carries its own palette
    *  (the proposal page), where the inspector's teal/indigo would shout. */
   className?: string;
+  /** inline variant only: renders an <a> to the authoritative definition instead of a <span>.
+   *  The hover tooltip still fires, so the link is an escape hatch rather than the primary read.
+   *  Used by the proposal page to point at the published wwPDB dictionary for the categories that
+   *  already exist there — and, by its absence, to mark the ones it is proposing. */
+  href?: string;
   onToggle?: () => void;
   onRemove?: () => void;
   onDigDeeper?: () => void;
@@ -49,15 +55,25 @@ export function MmcifChip({
     children ?? (isCat ? text : <ItemLabel cat={target.cat} field={target.field} />);
 
   if (variant === "inline") {
+    const inlineClass =
+      className ??
+      `cursor-help font-mono ${isCat ? "text-slate-700 hover:text-indigo-700" : "text-teal-700 hover:underline"}`;
+    if (href) {
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={inlineClass}
+          onMouseEnter={onEnter}
+          onMouseLeave={onLeave}
+        >
+          {labelNode}
+        </a>
+      );
+    }
     return (
-      <span
-        className={
-          className ??
-          `cursor-help font-mono ${isCat ? "text-slate-700 hover:text-indigo-700" : "text-teal-700 hover:underline"}`
-        }
-        onMouseEnter={onEnter}
-        onMouseLeave={onLeave}
-      >
+      <span className={inlineClass} onMouseEnter={onEnter} onMouseLeave={onLeave}>
         {labelNode}
       </span>
     );

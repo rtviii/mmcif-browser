@@ -1,4 +1,4 @@
-data_constructed_two_pocket
+data_constructed_two_pocket_flat
 #
 # CONSTRUCTED -- not deposited data. The peptide scaffold is a real 1EJG tripeptide; the
 # occupants are built to their correct internal geometry (ethylene glycol C-C 1.512 A /
@@ -70,7 +70,7 @@ HETATM 40 O O2  D EDO E 3 .  ? 0.858  0.932  -1.306 0.20 32.00 ? 502 EDO A O2  1
 #
 # proposed heterogeneity extension -- the categories below are NOT part of the
 # current PDBx/mmCIF dictionary; they are what this page proposes to add.
-# the bottom pocket is ordered only within the EDO1 population, so EDO1 is its parent and the group is complete
+# both pockets are parented to `base`, which says they vary independently -- that the bottom pocket is ordered only within EDO1 has no representation here
 loop_
 _pdbx_alt_groups.id
 _pdbx_alt_groups.alt_group_id
@@ -92,9 +92,9 @@ _pdbx_heterogeneity_hierarchy.occupancy_completeness
 _pdbx_heterogeneity_hierarchy.occupancy_refine_flag
 _pdbx_heterogeneity_hierarchy.occupancy_value
 _pdbx_heterogeneity_hierarchy.state_kind
-base   .          .    .        .       1.0 .
-Ligand top_pocket base complete refined .   compositional
-EDO1   top_pocket base complete refined .   compositional
-EDO2   bot_pocket EDO1 complete refined .   compositional
-EDO3   bot_pocket EDO1 complete refined .   compositional
+base   .          .    .          .       1.0 .
+Ligand top_pocket base complete   refined .   compositional
+EDO1   top_pocket base complete   refined .   compositional
+EDO2   bot_pocket base incomplete refined .   compositional
+EDO3   bot_pocket base incomplete refined .   compositional
 #

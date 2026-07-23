@@ -1,5 +1,10 @@
 # Heterogeneity encoding — progress report
 
+> **Superseded — dated snapshot (2026-07-09).** File lists and the ten-part structure below are stale:
+> the synthetic `case_*.cif` / `stage_minimal.cif` files are gone, replaced by PDB-anchored carved
+> examples, and the page is now fourteen sections. The living playbook is `HANDOFF.md`. Kept only as a
+> record of the 2026-07-09 state.
+
 *Status as of 2026-07-09. Branch `grouped_occupancy_proposal`. Everything below is committed to the
 working tree but not yet to git (see "Working-tree state").*
 

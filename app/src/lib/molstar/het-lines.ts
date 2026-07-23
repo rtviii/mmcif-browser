@@ -6,7 +6,7 @@
 //
 // Two tiers, because they want different treatment:
 //   meta  -- the rows that DEFINE the network (_pdbx_alt_groups, _pdbx_heterogeneity_hierarchy,
-//            _pdbx_state_coexistence, _pdbx_occupancy_constraint_term). A handful of rows; these
+//            _pdbx_state_coexistence, _pdbx_occupancy_relationship). A handful of rows; these
 //            get the full highlight, and the anchor is where the panel scrolls to.
 //   atoms -- the _atom_site rows the network's selectors match. Often the bulk of the file; these
 //            get a rail mark only, so a selection is findable without drowning the panel.
@@ -17,12 +17,14 @@ import type { MolCifFile } from "@/lib/cif-source/types";
 import { matchesSelector, type AtomKey, type HetModel } from "./het";
 
 // Loop categories whose row identity is a network name, and the field(s) carrying it.
-// _pdbx_state_coexistence names a network on BOTH sides of the NOT, so both count.
+// _pdbx_state_coexistence names a network on BOTH sides of the NOT, so both count; likewise an
+// occupancy relationship names one in the head row's target and the rest in its member rows.
 export const HET_ID_FIELDS: Record<string, string[]> = {
   pdbx_alt_groups: ["alt_group_id"],
   pdbx_heterogeneity_hierarchy: ["alt_group_id"],
   pdbx_state_coexistence: ["heterogeneity_id", "heterogeneity_ids"],
-  pdbx_occupancy_constraint_term: ["alt_group_id"],
+  pdbx_occupancy_relationship: ["target"],
+  pdbx_occupancy_relationship_member: ["state_id"],
 };
 
 export interface NetworkLines {

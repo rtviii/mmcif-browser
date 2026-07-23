@@ -12,6 +12,10 @@ the base dictionary read together with mmcif_pdbx_v50_het_ext.dic, so its FK gra
 definitions are derived by the same pipeline -- the extension just adds three categories and
 their pointers into ATOM_SITE / PDBX_ALT_GROUPS.
 
+The output must be byte-reproducible: unchanged inputs have to yield an unchanged file, or
+every rebuild buries real schema changes under a ~3MB ordering-only diff. That means any list
+DictionaryApi hands back from a set has to be sorted before it is serialised.
+
 Run: pipeline/.venv/bin/python pipeline/build_artifacts.py
 """
 import hashlib
@@ -117,8 +121,10 @@ def build(dic_paths, dict_name, graph_name, variant, label):
         categories[cat] = {
             "name": cat,
             "description": reflow(d.getCategoryDescription(cat)),
-            "groups": d.getCategoryGroupList(cat) or [],
-            "keys": d.getCategoryKeyList(cat) or [],
+            # DictionaryApi returns these two as list(set(...)), so their order varies
+            # run to run -- sort for a reproducible artifact (see module docstring).
+            "groups": sorted(d.getCategoryGroupList(cat) or []),
+            "keys": sorted(d.getCategoryKeyList(cat) or []),
             "mandatory": d.getCategoryMandatoryCode(cat),
             "examples": [block(e[0]) for e in (d.getCategoryExampleList(cat) or []) if e and e[0]],
             "items": sorted(attrs),

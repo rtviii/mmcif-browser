@@ -72,6 +72,59 @@ def load(name: str) -> list[dict]:
     return []
 
 
+def split_values(s: str) -> list[str]:
+    """Quote-aware split of one CIF data row (details fields carry spaces)."""
+    out, i, n = [], 0, len(s)
+    while i < n:
+        if s[i] in " \t":
+            i += 1
+        elif s[i] == "'":
+            j = s.index("'", i + 1)
+            out.append(s[i + 1:j])
+            i = j + 1
+        else:
+            j = i
+            while j < n and s[j] not in " \t":
+                j += 1
+            out.append(s[i:j])
+            i = j
+    return out
+
+
+def load_loop(name: str, prefix: str) -> list[dict]:
+    """Read the first loop_ whose column names start with `prefix`, as a list of dicts.
+
+    Used for the annotation loops -- the encoding claims below are about which parent a row
+    names, which is a fact about the file and not about its coordinates.
+    """
+    lines = open(os.path.join(EX, name)).read().splitlines()
+    i = 0
+    while i < len(lines):
+        if lines[i].strip() == "loop_":
+            j = i + 1
+            names = []
+            while j < len(lines) and lines[j].strip().startswith("_"):
+                names.append(lines[j].strip())
+                j += 1
+            if names and names[0].startswith(prefix):
+                cols = [n.split(".", 1)[1] for n in names]
+                out = []
+                while j < len(lines):
+                    s = lines[j]
+                    if s.startswith("#") or not s.strip():
+                        break
+                    p = split_values(s)
+                    if len(p) < len(cols):
+                        break
+                    out.append(dict(zip(cols, p)))
+                    j += 1
+                return out
+            i = j
+            continue
+        i += 1
+    return []
+
+
 def d(a, b) -> float:
     return math.dist((a["x"], a["y"], a["z"]), (b["x"], b["y"], b["z"]))
 
@@ -244,7 +297,7 @@ for other in ("C", "D"):
     ok(f"5E1N_arg74_clash: Arg74 alternate {other} does NOT clash -> the exclusion is specific to B",
        far >= 2.4, f"{far:.2f} A")
 
-print("\nconstructed_two_pocket -- constructed, but chemically correct")
+print("\nconstructed_two_pocket -- the nesting the occupancies actually call for")
 no_clashes("constructed_two_pocket.cif")
 peptide_bonds("constructed_two_pocket.cif")
 D_ = load("constructed_two_pocket.cif")
@@ -262,11 +315,89 @@ ok("constructed_two_pocket: the ligand ring is all-carbon (a real phenol, not N+
    all(a["el"] == "C" for a in ring), f"{len(ring)} ring atoms")
 occ_top = {a["alt"]: a["occ"] for a in D_ if a["seq"] == 501}
 occ_bot = {a["alt"]: a["occ"] for a in D_ if a["seq"] == 502}
-ok("constructed_two_pocket: top pocket sums to 1.0 (complete)", abs(sum(occ_top.values()) - 1.0) < 1e-9, str(occ_top))
-ok("constructed_two_pocket: bottom pocket sums to 0.5 (incomplete)", abs(sum(occ_bot.values()) - 0.5) < 1e-9, str(occ_bot))
-ok("constructed_two_pocket: O(EDO1) = O(EDO2) + O(EDO3)  <-- the linear constraint the tree cannot hold",
+ok("constructed_two_pocket: top pocket sums to 1.0 (complete under base)",
+   abs(sum(occ_top.values()) - 1.0) < 1e-9, str(occ_top))
+ok("constructed_two_pocket: O(EDO2) + O(EDO3) == O(EDO1)  <-- which is what licenses the parent link",
    abs(occ_top.get("B", 0) - (occ_bot.get("C", 0) + occ_bot.get("D", 0))) < 1e-9,
-   f"{occ_top.get('B')} = {occ_bot.get('C')} + {occ_bot.get('D')}")
+   f"{occ_bot.get('C')} + {occ_bot.get('D')} = {occ_top.get('B')}")
+
+# The encoding claims. The arithmetic above says the bottom pocket is ordered only within the
+# EDO1 population, which is a nesting -- so the parent link carries it and no escape hatch is
+# needed. This is the same shape as pose_1/pose_2 under `bound` in 7HHS.
+H = {r["alt_group_id"]: r
+     for r in load_loop("constructed_two_pocket.cif", "_pdbx_heterogeneity_hierarchy.")}
+ok("constructed_two_pocket: EDO2/EDO3 are parented to EDO1, not to base",
+   H["EDO2"]["parent_alt_groups_id"] == "EDO1" and H["EDO3"]["parent_alt_groups_id"] == "EDO1",
+   f"EDO2 -> {H['EDO2']['parent_alt_groups_id']}, EDO3 -> {H['EDO3']['parent_alt_groups_id']}")
+ok("constructed_two_pocket: so the bottom group is complete (it sums to its parent, not to 1)",
+   H["EDO2"]["occupancy_completeness"] == "complete" == H["EDO3"]["occupancy_completeness"],
+   H["EDO2"]["occupancy_completeness"])
+ok("constructed_two_pocket: the tree carries the coupling, so NO occupancy relationship is written",
+   not load_loop("constructed_two_pocket.cif", "_pdbx_occupancy_relationship."),
+   "no _pdbx_occupancy_relationship loop")
+
+print("\nconstructed_two_pocket_flat -- the worked negative: same atoms, wrong parent")
+F = load("constructed_two_pocket_flat.cif")
+key = lambda A: [(a["ch"], a["seq"], a["atom"], a["alt"], a["x"], a["y"], a["z"], a["occ"]) for a in A]
+ok("constructed_two_pocket_flat: coordinates and occupancies IDENTICAL to the nested file",
+   key(F) == key(D_), f"{len(F)} atoms, only the hierarchy differs")
+HF = {r["alt_group_id"]: r
+      for r in load_loop("constructed_two_pocket_flat.cif", "_pdbx_heterogeneity_hierarchy.")}
+ok("constructed_two_pocket_flat: EDO2/EDO3 hang off base -> the tree reads the pockets as independent",
+   HF["EDO2"]["parent_alt_groups_id"] == "base" and HF["EDO3"]["parent_alt_groups_id"] == "base",
+   f"EDO2 -> {HF['EDO2']['parent_alt_groups_id']}")
+ok("constructed_two_pocket_flat: and must then call the bottom group incomplete, against a parent of 1.0",
+   HF["EDO2"]["occupancy_completeness"] == "incomplete", HF["EDO2"]["occupancy_completeness"])
+ok("constructed_two_pocket_flat: exactly one column differs from the nested file (the parent)",
+   [r["parent_alt_groups_id"] for r in load_loop("constructed_two_pocket_flat.cif", "_pdbx_heterogeneity_hierarchy.")]
+   != [r["parent_alt_groups_id"] for r in load_loop("constructed_two_pocket.cif", "_pdbx_heterogeneity_hierarchy.")]
+   and [r["coexistence_group_id"] for r in load_loop("constructed_two_pocket_flat.cif", "_pdbx_heterogeneity_hierarchy.")]
+   == [r["coexistence_group_id"] for r in load_loop("constructed_two_pocket.cif", "_pdbx_heterogeneity_hierarchy.")])
+
+print("\nconstructed_ncs_lock -- the cross-branch lock no parent link can imply")
+no_clashes("constructed_ncs_lock.cif")
+peptide_bonds("constructed_ncs_lock.cif")
+K = load("constructed_ncs_lock.cif")
+ka = [a for a in K if a["ch"] == "A"]
+kb = [a for a in K if a["ch"] == "B"]
+ok("constructed_ncs_lock: two copies, same atom count", len(ka) == len(kb) and len(ka) > 0,
+   f"A={len(ka)}, B={len(kb)}")
+worst = max(abs(d(ka[i], ka[j]) - d(kb[i], kb[j]))
+            for i in range(len(ka)) for j in range(i + 1, len(ka)))
+ok("constructed_ncs_lock: chain B is a RIGID copy of chain A -> a proper NCS operator",
+   worst < 1e-2, f"largest internal-distance deviation {worst:.4f} A")
+sep = min(d(a, b) for a in ka for b in kb)
+ok("constructed_ncs_lock: the two copies do not clash", sep >= 3.0, f"closest approach {sep:.2f} A")
+e_a = [a for a in ka if a["comp"] == "EDO"]
+e_b = [a for a in kb if a["comp"] == "EDO"]
+ok("constructed_ncs_lock: one glycol per copy", len(e_a) == 4 and len(e_b) == 4,
+   f"A={len(e_a)}, B={len(e_b)}")
+oa, ob = {a["occ"] for a in e_a}, {a["occ"] for a in e_b}
+ok("constructed_ncs_lock: both glycols carry the SAME partial occupancy -- the trace the restraint leaves",
+   oa == ob and len(oa) == 1 and next(iter(oa)) < 1.0, f"A={oa}, B={ob}")
+
+HK = {r["alt_group_id"]: r
+      for r in load_loop("constructed_ncs_lock.cif", "_pdbx_heterogeneity_hierarchy.")}
+ok("constructed_ncs_lock: neither site is the other's parent -> no parent link can tie them",
+   HK["edo_A"]["parent_alt_groups_id"] == "base" and HK["edo_B"]["parent_alt_groups_id"] == "base",
+   f"edo_A -> {HK['edo_A']['parent_alt_groups_id']}, edo_B -> {HK['edo_B']['parent_alt_groups_id']}")
+ok("constructed_ncs_lock: they sit in DIFFERENT coexistence groups -> no sibling rule relates them",
+   HK["edo_A"]["coexistence_group_id"] != HK["edo_B"]["coexistence_group_id"],
+   f"{HK['edo_A']['coexistence_group_id']} vs {HK['edo_B']['coexistence_group_id']}")
+ok("constructed_ncs_lock: each is a lone partial network -> completeness 'single', no sum rule",
+   HK["edo_A"]["occupancy_completeness"] == "single" == HK["edo_B"]["occupancy_completeness"],
+   HK["edo_A"]["occupancy_completeness"])
+REL = load_loop("constructed_ncs_lock.cif", "_pdbx_occupancy_relationship.")
+MEM = load_loop("constructed_ncs_lock.cif", "_pdbx_occupancy_relationship_member.")
+ok("constructed_ncs_lock: exactly one relationship row, of type 'equal'",
+   len(REL) == 1 and REL[0]["type"] == "equal", str([r.get("type") for r in REL]))
+ok("constructed_ncs_lock: 'equal' carries exactly one member (the other side is the target)",
+   len(MEM) == 1, f"{len(MEM)} member row(s)")
+ok("constructed_ncs_lock: the tie names the two glycols -> O(edo_B) = O(edo_A)",
+   {MEM[0]["state_id"], REL[0]["target"]} == {"edo_A", "edo_B"},
+   f"member {MEM[0]['state_id']}, target {REL[0]['target']}")
+ok("constructed_ncs_lock: honest about provenance -> enforced = annotation (no program fits it)",
+   REL[0]["enforced"] == "annotation", REL[0]["enforced"])
 
 print(f"\n{CHECKED - len(FAILED)}/{CHECKED} claims hold")
 if FAILED:

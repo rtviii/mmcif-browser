@@ -2,10 +2,11 @@ data_mmcif_pdbx_het_ext.dic
 #
 # Proposed heterogeneity extension to the PDBx/mmCIF dictionary.
 #
-# Three additive categories that name correlated alternate-conformation "networks",
-# nest them into a hierarchy with mutually-exclusive (occupancy) groups, and optionally
-# list cross-branch exclusions. ATOM_SITE is unchanged; every relationship is expressed
-# by pointers into existing keys. Companion to the reconciliation memo
+# Five additive categories that name correlated alternate-conformation "networks",
+# nest them into a hierarchy with mutually-exclusive (occupancy) groups, optionally
+# list cross-branch exclusions, and optionally carry an occupancy tie that no parent
+# link in the hierarchy can imply. ATOM_SITE is unchanged; every relationship is
+# expressed by pointers into existing keys. Companion to the reconciliation memo
 # (heterogeneity-proposal/_reconciliation-memo.md).
 #
 # This file is read together with mmcif_pdbx_v50.dic to produce the "v50 + heterogeneity"
@@ -228,6 +229,113 @@ save__pdbx_heterogeneity_hierarchy.parent_alt_groups_id
    #
 save_
 #
+save__pdbx_heterogeneity_hierarchy.occupancy_completeness
+   _item_description.description
+;              The sum rule for this row's sibling set -- the networks that share its
+               coexistence_group_id under the same parent. It carries the sum rule ONLY,
+               never exclusivity: exclusivity is what coexistence_group_id already says.
+               Siblings in one coexistence group must agree on this value.
+
+               complete   -- the siblings sum to their parent's occupancy (to 1 at the
+                             root). The ordinary closed occupancy group.
+               incomplete -- the siblings sum to strictly less than the parent; the
+                             remainder is an unmodelled or absent alternative.
+               single     -- a lone partial network with no sibling and no sum rule (a
+                             ligand present in 30% of copies with no modelled complement).
+                             Distinct from incomplete, which has a sibling.
+
+               Optional. Part of the proposed heterogeneity extension.
+;
+   _item.name            "_pdbx_heterogeneity_hierarchy.occupancy_completeness"
+   _item.category_id     pdbx_heterogeneity_hierarchy
+   _item.mandatory_code  no
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_enumeration.value
+   _item_enumeration.detail
+     complete    "the siblings sum to their parent's occupancy"
+     incomplete  "the siblings sum to less than their parent's occupancy"
+     single      "a lone partial network: no sibling, no sum rule"
+   #
+save_
+#
+save__pdbx_heterogeneity_hierarchy.occupancy_refine_flag
+   _item_description.description
+;              Whether this network's own occupancy was a refined parameter or held fixed
+               during refinement. This is the one bit that separates a fixed parent -- which
+               every mainstream refinement program can express -- from a refinable parent,
+               which none currently can. It is recorded so that a program which grows the
+               capability can read it, and so that a reader can tell a constrained number
+               from one that merely came out that way.
+
+               Optional. Part of the proposed heterogeneity extension.
+;
+   _item.name            "_pdbx_heterogeneity_hierarchy.occupancy_refine_flag"
+   _item.category_id     pdbx_heterogeneity_hierarchy
+   _item.mandatory_code  no
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_enumeration.value
+   _item_enumeration.detail
+     refined  "the occupancy was a refined parameter"
+     fixed    "the occupancy was held fixed (see occupancy_value)"
+   #
+save_
+#
+save__pdbx_heterogeneity_hierarchy.occupancy_value
+   _item_description.description
+;              The occupancy value used when occupancy_refine_flag is 'fixed' -- a metal
+               parent at 1.0, a ligand deliberately held at 0.5, a special-position atom.
+               '.' when the value was refined, or is simply derivable by summing
+               _atom_site.occupancy over the network's atoms.
+
+               Deliberately redundant with the atom rows: it resolves the case where a
+               summed number coincides with a meaningful value by accident.
+
+               Optional. Part of the proposed heterogeneity extension.
+;
+   _item.name            "_pdbx_heterogeneity_hierarchy.occupancy_value"
+   _item.category_id     pdbx_heterogeneity_hierarchy
+   _item.mandatory_code  no
+   #
+   _item_type.code  float
+   #
+   loop_
+   _item_range.maximum
+   _item_range.minimum
+     1.0  0.0
+   #
+save_
+#
+save__pdbx_heterogeneity_hierarchy.state_kind
+   _item_description.description
+;              What kind of alternative this network is: the same chemical entity in a
+               different pose (conformational), or something present in some copies and
+               absent in others (compositional). A compositional alternative is the case
+               whose 'absent' state has no atoms at all, and so can be named only by a node
+               in the tree -- never by a per-atom label.
+
+               Optional. Part of the proposed heterogeneity extension.
+;
+   _item.name            "_pdbx_heterogeneity_hierarchy.state_kind"
+   _item.category_id     pdbx_heterogeneity_hierarchy
+   _item.mandatory_code  no
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_enumeration.value
+   _item_enumeration.detail
+     conformational  "the same entity in a different pose"
+     compositional   "an entity present in some copies and absent in others"
+     unknown         "not specified by the depositor"
+   #
+save_
+#
 ###########################################################################
 #  _pdbx_state_coexistence  -- optional cross-branch exclusions (NOT)
 ###########################################################################
@@ -315,6 +423,208 @@ save__pdbx_state_coexistence.heterogeneity_ids
    _item_linked.child_name
    _item_linked.parent_name
      "_pdbx_state_coexistence.heterogeneity_ids"  "_pdbx_alt_groups.alt_group_id"
+   #
+save_
+#
+###########################################################################
+#  _pdbx_occupancy_relationship  -- optional escape hatch: an occupancy tie
+#                                   the hierarchy's parent links cannot imply
+###########################################################################
+save_pdbx_occupancy_relationship
+   _category.description
+;              Optional. States an occupancy tie between networks that the hierarchy's
+               parent links cannot imply -- principally the cross-branch lock, where two
+               networks sit in different branches, neither is the other's parent, and they
+               are nevertheless held to the same occupancy. Absent from ordinary files: a
+               parent link plus the completeness flag on PDBX_HETEROGENEITY_HIERARCHY
+               already carries every tie that runs between a network and its own parent.
+
+               A head row here states the tie and its type; the child member table
+               PDBX_OCCUPANCY_RELATIONSHIP_MEMBER supplies the variable-length left-hand
+               side, one network per row, so that every field stays atomic.
+
+               The tie is recorded as typed data over network names -- a set of members and
+               a target -- and carries no arithmetic. That is the shape a refinement
+               occupancy group already has, which is what makes it portable: it records the
+               relation the depositing program was given, not a transcription of one
+               program's script.
+
+               Part of the proposed heterogeneity extension.
+;
+   _category.id              pdbx_occupancy_relationship
+   _category.mandatory_code  no
+   #
+   _category_key.name  "_pdbx_occupancy_relationship.id"
+   #
+   loop_
+   _category_group.id
+     inclusive_group
+   #
+save_
+#
+save__pdbx_occupancy_relationship.id
+   _item_description.description
+;              Unique identifier of this relationship. Referenced by
+               _pdbx_occupancy_relationship_member.relationship_id, which carries the
+               networks on its left-hand side.
+;
+   _item.name            "_pdbx_occupancy_relationship.id"
+   _item.category_id     pdbx_occupancy_relationship
+   _item.mandatory_code  yes
+   #
+   _item_type.code  int
+   #
+save_
+#
+save__pdbx_occupancy_relationship.type
+   _item_description.description
+;              The form of the tie. Both forms read the same way -- a set of member
+               networks related to one target network -- and neither carries coefficients.
+               sum_to -- the member networks' occupancies sum to the occupancy of target.
+                         Note that the ubiquitous case of this shape, a set of alternatives
+                         summing to their own parent, does NOT need a row here: a parent
+                         link plus occupancy_completeness 'complete' already says it. Use
+                         sum_to only when the members and the target are not in that
+                         relation, so that no parent link can imply the sum.
+               equal  -- the single member network's occupancy equals the occupancy of
+                         target. The cross-branch lock: two networks in different branches
+                         held to one occupancy, which no parent link relates.
+;
+   _item.name            "_pdbx_occupancy_relationship.type"
+   _item.category_id     pdbx_occupancy_relationship
+   _item.mandatory_code  yes
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_enumeration.value
+   _item_enumeration.detail
+     sum_to  "the member networks' occupancies sum to the target's"
+     equal   "the single member network's occupancy equals the target's"
+   #
+save_
+#
+save__pdbx_occupancy_relationship.target
+   _item_description.description
+;              The network on the right-hand side of the tie: the one the members sum to
+               (type sum_to), or the one the single member equals (type equal). This data
+               item is a pointer to _pdbx_alt_groups.alt_group_id.
+;
+   _item.name            "_pdbx_occupancy_relationship.target"
+   _item.category_id     pdbx_occupancy_relationship
+   _item.mandatory_code  yes
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_linked.child_name
+   _item_linked.parent_name
+     "_pdbx_occupancy_relationship.target"  "_pdbx_alt_groups.alt_group_id"
+   #
+save_
+#
+save__pdbx_occupancy_relationship.enforced
+   _item_description.description
+;              How the depositing program treated this relation. This records whether the
+               deposited occupancies were tied to the relation or merely satisfy it, which
+               is what separates a portable specification from a coincidence:
+               constraint -- a hard constraint (for example Refmac's 'complete' occupancy
+                             group); the numbers could not have come out otherwise.
+               restraint  -- a soft restraint with a sigma (for example a SHELXL SUMP);
+                             the numbers were pulled toward the relation.
+               annotation -- an assertion that no program fit; the relation is recorded so
+                             that a later program can act on it, and the numbers satisfy it
+                             only as far as the depositor arranged.
+;
+   _item.name            "_pdbx_occupancy_relationship.enforced"
+   _item.category_id     pdbx_occupancy_relationship
+   _item.mandatory_code  yes
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_enumeration.value
+   _item_enumeration.detail
+     constraint  "treated as a hard constraint during refinement"
+     restraint   "treated as a soft restraint with a sigma"
+     annotation  "asserted but not fitted by any program"
+   #
+save_
+#
+save__pdbx_occupancy_relationship.details
+   _item_description.description
+;              A human-readable statement of the relation and why it is present.
+;
+   _item.name            "_pdbx_occupancy_relationship.details"
+   _item.category_id     pdbx_occupancy_relationship
+   _item.mandatory_code  no
+   #
+   _item_type.code  text
+   #
+save_
+#
+###########################################################################
+#  _pdbx_occupancy_relationship_member  -- one member network per row
+###########################################################################
+save_pdbx_occupancy_relationship_member
+   _category.description
+;              The left-hand side of an occupancy relationship, one network per row.
+               Splitting the members out of PDBX_OCCUPANCY_RELATIONSHIP is what keeps every
+               field atomic: a tie over an arbitrary number of networks needs no
+               comma-separated list.
+
+               A relationship of type 'equal' has exactly one member row; one of type
+               'sum_to' has two or more.
+
+               Part of the proposed heterogeneity extension.
+;
+   _category.id              pdbx_occupancy_relationship_member
+   _category.mandatory_code  no
+   #
+   loop_
+   _category_key.name
+     "_pdbx_occupancy_relationship_member.relationship_id"
+     "_pdbx_occupancy_relationship_member.state_id"
+   #
+   loop_
+   _category_group.id
+     inclusive_group
+   #
+save_
+#
+save__pdbx_occupancy_relationship_member.relationship_id
+   _item_description.description
+;              The relationship this member belongs to. This data item is a pointer to
+               _pdbx_occupancy_relationship.id.
+;
+   _item.name            "_pdbx_occupancy_relationship_member.relationship_id"
+   _item.category_id     pdbx_occupancy_relationship_member
+   _item.mandatory_code  yes
+   #
+   _item_type.code  int
+   #
+   loop_
+   _item_linked.child_name
+   _item_linked.parent_name
+     "_pdbx_occupancy_relationship_member.relationship_id"  "_pdbx_occupancy_relationship.id"
+   #
+save_
+#
+save__pdbx_occupancy_relationship_member.state_id
+   _item_description.description
+;              A network on the left-hand side of the relationship. This data item is a
+               pointer to _pdbx_alt_groups.alt_group_id.
+;
+   _item.name            "_pdbx_occupancy_relationship_member.state_id"
+   _item.category_id     pdbx_occupancy_relationship_member
+   _item.mandatory_code  yes
+   #
+   _item_type.code  code
+   #
+   loop_
+   _item_linked.child_name
+   _item_linked.parent_name
+     "_pdbx_occupancy_relationship_member.state_id"  "_pdbx_alt_groups.alt_group_id"
    #
 save_
 #

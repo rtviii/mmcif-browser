@@ -1,4 +1,0 @@
-- lets highlight the rotamers inside the nwtworks...
-- strand breaks (ex. in B+ )
-- get rid of the stray "open" on an already initated page..
-- heterogeneity proposal page [DONE -> /proposal ; source docs synthesized into heterogeneity-proposal/proposal_v1.md]
