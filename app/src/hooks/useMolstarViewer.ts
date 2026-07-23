@@ -6,10 +6,14 @@ import { MolstarViewer } from "@/lib/molstar/viewer";
 // React StrictMode unmount/remount (dev double-invoke) reuses the same plugin
 // instead of tearing it down and rebuilding it. Mirrors the deferred-dispose
 // approach in fend_tubulinxyz's MolstarInstanceManager, scoped to one instance.
-export function useMolstarViewer(containerRef: RefObject<HTMLDivElement | null>) {
+export function useMolstarViewer(
+  containerRef: RefObject<HTMLDivElement | null>,
+  opts: { minimal?: boolean } = {},
+) {
   const viewerRef = useRef<MolstarViewer | null>(null);
   const disposeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ready, setReady] = useState(false);
+  const minimal = opts.minimal;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -23,7 +27,7 @@ export function useMolstarViewer(containerRef: RefObject<HTMLDivElement | null>)
 
     const viewer = viewerRef.current ?? (viewerRef.current = new MolstarViewer());
     let cancelled = false;
-    viewer.init(container).then(() => {
+    viewer.init(container, { minimal }).then(() => {
       if (!cancelled) setReady(true);
     });
 
@@ -36,7 +40,7 @@ export function useMolstarViewer(containerRef: RefObject<HTMLDivElement | null>)
         setReady(false);
       }, 1000);
     };
-  }, [containerRef]);
+  }, [containerRef, minimal]);
 
   return { viewer: viewerRef.current, ready };
 }

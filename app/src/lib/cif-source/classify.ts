@@ -133,6 +133,8 @@ const CATEGORY_LENS: Record<string, Lens[]> = {
   // Proposed heterogeneity-extension categories (see mmcif_pdbx_v50_het_ext.dic).
   pdbx_alt_groups: ["heterogeneity"],
   pdbx_heterogeneity_hierarchy: ["heterogeneity"],
+  pdbx_het_state: ["heterogeneity"],
+  pdbx_het_state_members: ["heterogeneity"],
   pdbx_state_coexistence: ["heterogeneity"],
 };
 

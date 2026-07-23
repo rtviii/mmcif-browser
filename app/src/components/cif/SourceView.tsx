@@ -5,40 +5,20 @@ import type { CategorySpan, CifDocument } from "@/lib/cif-source/segment";
 import type { FoldNode } from "@/lib/cif-source/fold-tree";
 import type { VisibleRow } from "@/lib/cif-source/flatten";
 import type { KeyValueTable, LoopTable } from "@/lib/cif-source/table";
-import { type Token, tokenizeLine } from "@/lib/cif-source/tokenize";
-
-const NUMERIC = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
+import { tokenizeLine } from "@/lib/cif-source/tokenize";
+import { cellPx, CH_PX, TOKEN_CLASS } from "./source-style";
+import { DataCell, PopoverLayer, usePopover } from "./DataCell";
 
 const ROW_H = 18;
 const HEADER_H = 30; // category header rows are taller, doubling as inter-block spacing
-const CH_PX = 6.62; // approx monospace advance at 11px
 const GUTTER_PAD = 8; // small left pad before the gutter / header chevron
 const RAIL_W = 14; // width of the category fold-chevron column (data aligns under the header name)
-const EXPAND_SLACK = 12; // chars a value may exceed its column width before it becomes click-to-expand
-
-const TOKEN_CLASS: Record<Token["type"], string> = {
-  keyword: "text-indigo-600",
-  comment: "text-slate-400 italic",
-  item: "text-teal-700",
-  string: "text-amber-700",
-  number: "text-rose-700",
-  text: "text-slate-700",
-};
 
 export interface ViewOptions {
   hideNoise: boolean;
   collapsePreamble: boolean;
   tableMode: boolean;
   stickyHeader: boolean;
-}
-
-// A persistent popover anchored to a clicked cell / multiline value, dismissed by
-// clicking away or Escape.
-interface Popover {
-  x: number;
-  y: number;
-  field?: string;
-  value: string;
 }
 
 export interface SourceViewHandle {
@@ -79,19 +59,7 @@ const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function Source
   const parentRef = useRef<HTMLDivElement>(null);
   const gutterPx = GUTTER_PAD + RAIL_W;
 
-  const [pop, setPop] = useState<Popover | null>(null);
-  const openPopover = (anchor: HTMLElement, value: string, field?: string) => {
-    const r = anchor.getBoundingClientRect();
-    setPop({ x: r.left, y: r.bottom + 4, value, field });
-  };
-  useEffect(() => {
-    if (!pop) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPop(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [pop]);
+  const [pop, openPopover, closePopover] = usePopover();
 
   const virtualizer = useVirtualizer({
     count: visible.length,
@@ -280,18 +248,7 @@ const SourceView = forwardRef<SourceViewHandle, SourceViewProps>(function Source
         </div>
         </div>
 
-      {pop && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setPop(null)} />
-          <div
-            className="no-scrollbar fixed z-50 max-h-[50vh] max-w-[480px] overflow-auto rounded border border-slate-200 bg-white p-2 shadow-lg"
-            style={{ left: Math.max(8, Math.min(pop.x, window.innerWidth - 496)), top: pop.y }}
-          >
-            {pop.field && <div className="mb-1 font-mono text-[10px] text-teal-700">{pop.field}</div>}
-            <pre className="whitespace-pre-wrap break-words font-mono text-[11px] text-slate-700">{pop.value}</pre>
-          </div>
-        </>
-      )}
+      <PopoverLayer pop={pop} onClose={closePopover} />
     </div>
   );
 });
@@ -400,7 +357,6 @@ function LineRow({
   return <VerbatimContent line={doc.lines[row.lineIndex]} onHoverItem={onHoverItem} onClearHover={onClearHover} />;
 }
 
-const cellPx = (w: number) => Math.round((w + 1) * CH_PX);
 
 // Render a category's source line as table cells. A loop_ line becomes a column-header row and
 // each data row-start line becomes aligned value cells; a key-value declaration line becomes an
@@ -489,51 +445,6 @@ function TableLine({
   }
 
   return <VerbatimContent line={line} onHoverItem={onHoverItem} onClearHover={onClearHover} />;
-}
-
-function DataCell({
-  value,
-  field,
-  w,
-  openPopover,
-}: {
-  value: string;
-  field: string;
-  w: number;
-  openPopover: (anchor: HTMLElement, value: string, field?: string) => void;
-}) {
-  const placeholder = value === "?" || value === "." || value === "";
-  const cls = placeholder
-    ? "text-slate-400"
-    : NUMERIC.test(value)
-      ? "text-rose-700"
-      : "text-slate-700";
-
-  // Every cell keeps the SAME fixed width so columns never shift. Only genuinely long values
-  // (multiline, or well past the column width) become click-to-expand — and even then the cell
-  // stays fixed-width, signalled by a dotted underline rather than a layout-breaking box.
-  const base = `mr-1 inline-block shrink-0 overflow-hidden text-ellipsis whitespace-nowrap ${cls}`;
-  const expandable = value.includes("\n") || value.length > w + EXPAND_SLACK;
-  if (!expandable) {
-    return (
-      <span className={base} style={{ width: cellPx(w) }}>
-        {value === "" ? "·" : value}
-      </span>
-    );
-  }
-  return (
-    <button
-      className={`${base} cursor-pointer text-left underline decoration-slate-300 decoration-dotted underline-offset-2 hover:text-indigo-700 hover:decoration-indigo-400`}
-      style={{ width: cellPx(w) }}
-      title="click for full value"
-      onClick={(e) => {
-        e.stopPropagation();
-        openPopover(e.currentTarget, value, field);
-      }}
-    >
-      {value}
-    </button>
-  );
 }
 
 // A category block divider: the category name (+ row/item count) on a taller row whose top
