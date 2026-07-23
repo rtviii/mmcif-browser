@@ -2,10 +2,9 @@
 
 A mechanism for correlated occupancy: explicit lists of **states**, grouped into **bundles**.
 
-Everything above this layer plays exactly as described in the website proposal — `_pdbx_alt_groups` (the networks: which atoms move together), `_pdbx_heterogeneity_hierarchy` (which networks are mutually exclusive at one site), and the sparse `NOT` table. The only genuinely new thing to read here is the state/bundle pair. 
+Everything above this layer plays exactly as described in the website proposal — `_pdbx_alt_groups` (the networks: which atoms move together), `_pdbx_heterogeneity_hierarchy` (which networks are mutually exclusive at one site), and the sparse `NOT` table (`_pdbx_state_coexistence`). The only new thing is the state/bundle pair. 
 
 ## Names
-
 
 - should we possibly rename `_pdbx_state_coexistence` to something like  `_pdbx_forbidden_states`   (it only ever serves the `NOT` now anyway?)
 
@@ -111,9 +110,9 @@ a state simply lists the networks that are present, and a bottom-pocket occupant
 just not listed. Second, the hierarchy table here carries only `coexistence_group_id`: it says
 Ligand and EDO1 are mutually exclusive in the top pocket, EDO2 and EDO3 in the bottom. 
 
-## Example 2 — the bridged water (the case that is supposed to be inexpressible)
+## example 2 — bridged water 
 
-A constructed site, but the shape is common. Ser45 and Thr82 point across a small cavity, and an ordered water sits between them needing a hydrogen-bond donor from each — so the water is present only when both side chains point in. The two side chains are otherwise independent of one another.
+Another toy scenario: Ser45 and Thr82 point across a small cavity, and an ordered water sits between them needing a hydrogen-bond donor from each — so the water is present only when both side chains point in. The two side chains are otherwise independent of one another.
 
 ```
               Ser45 in (.60)                    Ser45 out (.40)
@@ -129,9 +128,7 @@ A constructed site, but the shape is common. Ser45 and Thr82 point across a smal
               water     .24
 ```
 
-This is the site the current proposal singles out as the one it cannot express — the water's occupancy is a *product* of two independent events, and no sum of group occupancies ever equals a product. The state list never writes an equation, so there is no wall to hit: it writes the answer, 0.24, as a plain number.
-
-The numbers are worth reading closely, because they carry a second point. The two side chains genuinely are independent: .60 × .50 = .30, and states 1 and 2 together are .24 + .06 = .30 exactly. What is *not* independent is the water, which is ordered in 80% of the both-in copies rather than all of them. That last fact — a partial, conditional ordering sitting on top of an otherwise clean product — is something no product and no equation over marginals can state at all, and here it costs one row.
+The two side chains genuinely are independent: .60 × .50 = .30, and states 1 and 2 together are .24 + .06 = .30 exactly. What is *not* independent is the water, which is ordered in 80% of the both-in copies rather than all of them. That last fact — a partial, conditional ordering sitting on top of an otherwise clean product.
 
 ```
 loop_
@@ -184,8 +181,6 @@ _pdbx_het_state_members.alt_group_id
 5 thr82_out
 #
 ```
-
-Three sites, five states — the enumeration people expect to explode does not, because one set of coordinates sits in as many states as it needs to and nothing is duplicated. Note also that `wat301` belongs to no coexistence group: it has no modelled alternative to be exclusive with, it is simply there or not, and the hierarchy says that by leaving the field blank.
 
 ## Example 3 — the water clash (when you do *not* build a bundle)
 

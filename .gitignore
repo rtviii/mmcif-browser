@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 .DS_Store
 heterogeneity-proposal/scripts/.pdb-cache/
+heterogeneity-proposal/encoding_chat.md
+

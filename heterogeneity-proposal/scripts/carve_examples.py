@@ -3,8 +3,9 @@
 
 Coordinates are copied verbatim from the deposited mmCIF -- nothing is idealised, regenerated
 or nudged. What we add is the proposed heterogeneity annotation (_pdbx_alt_groups,
-_pdbx_heterogeneity_hierarchy, _pdbx_state_coexistence, _pdbx_occupancy_relationship), because
-that is the thing being proposed and it does not exist in the archive yet.
+_pdbx_heterogeneity_hierarchy, _pdbx_het_state, _pdbx_het_state_members,
+_pdbx_state_coexistence), because that is the thing being proposed and it does not exist in the
+archive yet.
 
 Where a network definition has a counterpart in the prototype annotation of 5E1N
 (source_docs/5E1N_hierarchy_20250423.cif) we reuse that grouping and say so in the header.
@@ -13,11 +14,15 @@ Sources
   1EJG  crambin, 0.54 A          -- the baseline spine and an isolated side-chain rotamer
   5E1N  calmodulin, atomic res.  -- correlated networks, the sub-residue boundary, the Ca site,
                                     and the one real NOT exclusion
-  7HHS  fragment screen          -- apo/bound nesting with two exclusive ligand poses
+  7HHS  fragment screen          -- a three-state bundle in deposited numbers
 
-Two cases have no deposited counterpart and are built here with correct chemistry, labelled as
-constructed: the two pockets (also constructed in the source deck), and the cross-branch lock,
-which no deposited file can carry because the restraint behind it is discarded at deposition.
+The occupancies written on a state are JOINT: the fraction of copies in exactly that
+combination. Every state table here is checked against _atom_site by check_examples.py -- a
+network's marginal has to equal the sum of the states containing it, and a bundle's states have
+to sum to 1.00 -- so the two halves of a file cannot drift apart.
+
+One case has no deposited counterpart and is built here with correct chemistry, labelled as
+constructed: the two adjacent pockets, whose joint is the thing marginals cannot pin down.
 
 Usage:  python3 heterogeneity-proposal/scripts/carve_examples.py
 """
@@ -184,15 +189,34 @@ def cut_note(extra: str = "") -> str:
 
 ALT_FIELDS = ["id", "alt_group_id", "auth_asym_id",
               "auth_seq_id_start", "auth_seq_id_end", "label_alt_id", "label_atom_id"]
-HIER_FIELDS = ["alt_group_id", "coexistence_group_id", "parent_alt_groups_id"]
-HIER_OCC_FIELDS = HIER_FIELDS + [
-    "occupancy_completeness", "occupancy_refine_flag", "occupancy_value", "state_kind"]
+HIER_FIELDS = ["alt_group_id", "coexistence_group_id"]
+HIER_KIND_FIELDS = HIER_FIELDS + ["state_kind"]
+STATE_FIELDS = ["id", "bundle_id", "occupancy", "provenance", "details"]
+MEMBER_FIELDS = ["state_id", "alt_group_id"]
 
 
 def alt_groups(members: list[tuple]) -> str:
     """members: (alt_group_id, chain, seq_start, seq_end, alt_id, atom_id)"""
     rows = [[str(i + 1), *[str(x) for x in m]] for i, m in enumerate(members)]
     return fmt_loop("pdbx_alt_groups", ALT_FIELDS, rows)
+
+
+def het_states(bundle: str, provenance: str, states: list[tuple]) -> tuple[str, str]:
+    """The state table and its membership join, as two loops.
+
+    states: (occupancy, [networks present], details). State ids are assigned in order.
+    A network absent from a state is simply not listed -- that is how a state names an empty
+    site, or a ligand that is not there, neither of which has an atom to hang a label on.
+    """
+    srows, mrows = [], []
+    for i, (occ, nets, details) in enumerate(states, 1):
+        srows.append([str(i), bundle, f"{occ:.2f}", provenance, f"'{details}'"])
+        for n in nets:
+            mrows.append([str(i), n])
+    total = sum(s[0] for s in states)
+    assert abs(total - 1.0) < 1e-9, f"bundle {bundle}: states sum to {total}, not 1.0"
+    return (fmt_loop("pdbx_het_state", STATE_FIELDS, srows),
+            fmt_loop("pdbx_het_state_members", MEMBER_FIELDS, mrows))
 
 
 # --------------------------------------------------------------------------- examples
@@ -242,21 +266,32 @@ def ca_site():
         ("seg2_C", "A", 25, 31, "C", "."),
         ("seg2_D", "A", 25, 31, "D", "."),
     ]
+    # Two coexistence groups and nothing more. Which seg1 alternate goes with which seg2
+    # alternate is a joint, it is not known here, and inventing a state table would be asserting
+    # populations nobody measured -- so this file deliberately carries none.
     hier = fmt_loop("pdbx_heterogeneity_hierarchy", HIER_FIELDS, [
-        ["base", ".", "."],
-        ["seg1_B", "entry_loop", "base"],
-        ["seg1_D", "entry_loop", "base"],
-        ["seg2_A", "exit_loop", "base"],
-        ["seg2_B", "exit_loop", "base"],
-        ["seg2_C", "exit_loop", "base"],
-        ["seg2_D", "exit_loop", "base"],
+        ["seg1_B", "entry_loop"],
+        ["seg1_D", "entry_loop"],
+        ["seg2_A", "exit_loop"],
+        ["seg2_B", "exit_loop"],
+        ["seg2_C", "exit_loop"],
+        ["seg2_D", "exit_loop"],
     ])
     # The deposited altloc-specific metal coordination bonds.
+    #
+    # BOTH key systems are written, and the label_ ones are not decoration: a consumer resolves a
+    # partner through ptnr*_label_asym_id, and a row without it is silently dropped rather than
+    # drawn. (Mol* does exactly that -- see mol-model-formats/.../struct_conn.ts, which returns
+    # undefined for a partner whose label_asym_id is absent.) An annotation nobody can resolve is
+    # the same as no annotation, so the columns that make these bonds RESOLVABLE are as much part
+    # of the claim as pdbx_ptnr1_label_alt_id, which is what makes them ALTERNATE-SPECIFIC.
     conn_fields = ["id", "conn_type_id",
+                   "ptnr1_label_asym_id", "ptnr1_label_comp_id", "ptnr1_label_atom_id",
                    "ptnr1_auth_asym_id", "ptnr1_auth_seq_id", "ptnr1_auth_comp_id",
-                   "ptnr1_label_atom_id", "pdbx_ptnr1_label_alt_id",
+                   "pdbx_ptnr1_label_alt_id",
+                   "ptnr2_label_asym_id", "ptnr2_label_comp_id", "ptnr2_label_atom_id",
                    "ptnr2_auth_asym_id", "ptnr2_auth_seq_id", "ptnr2_auth_comp_id",
-                   "ptnr2_label_atom_id", "pdbx_ptnr2_label_alt_id", "pdbx_dist_value"]
+                   "pdbx_ptnr2_label_alt_id", "pdbx_dist_value"]
     ca = [a for a in atoms if a["label_comp_id"] == "CA"][0]
     conn_rows = []
     for a in atoms:
@@ -267,9 +302,11 @@ def ca_site():
             continue
         conn_rows.append([
             f"metalc{len(conn_rows) + 1}", "metalc",
-            "A", "203", "CA", "CA", ".",
-            a["auth_asym_id"], a["auth_seq_id"], a["auth_comp_id"],
-            a["label_atom_id"], a["label_alt_id"], f"{d:.2f}",
+            ca["label_asym_id"], ca["label_comp_id"], ca["label_atom_id"],
+            ca["auth_asym_id"], ca["auth_seq_id"], ca["auth_comp_id"], ca["label_alt_id"],
+            a["label_asym_id"], a["label_comp_id"], a["label_atom_id"],
+            a["auth_asym_id"], a["auth_seq_id"], a["auth_comp_id"], a["label_alt_id"],
+            f"{d:.2f}",
         ])
     conn = fmt_loop("struct_conn", conn_fields, conn_rows)
 
@@ -316,12 +353,11 @@ def gln8_split():
         members.append(("sc_B", "A", 8, 8, "B", atom))
 
     hier = fmt_loop("pdbx_heterogeneity_hierarchy", HIER_FIELDS, [
-        ["base", ".", "."],
-        ["bb_A", "backbone_6_7", "base"],
-        ["bb_B", "backbone_6_7", "base"],
-        ["bb_C", "backbone_6_7", "base"],
-        ["sc_A", "sidechain_8", "base"],
-        ["sc_B", "sidechain_8", "base"],
+        ["bb_A", "backbone_6_7"],
+        ["bb_B", "backbone_6_7"],
+        ["bb_C", "backbone_6_7"],
+        ["sc_A", "sidechain_8"],
+        ["sc_B", "sidechain_8"],
     ])
     write_cif(
         "5E1N_gln8_split.cif", "5E1N_gln8_split",
@@ -350,37 +386,36 @@ def _hhs_members():
     ]
 
 
-NESTING_HEADER = """
+HHS_HEADER = """
 Fragment-screening entry PDB 7HHS: the ligand pocket -- residues 21-25 and 47-49 of chain A
 plus both modelled poses of ligand A1A7O. Deposited coordinates, copied verbatim; H omitted.
+
+The three states below are the deposited occupancies read as a joint distribution: the pocket
+is apo in 78% of copies, and in the remaining 22% it is bound, with one pose or the other.
+0.13 + 0.09 = 0.22 is then arithmetic on the state table rather than a claim made elsewhere.
 """
 
 
 def apo_bound():
-    hier = fmt_loop("pdbx_heterogeneity_hierarchy", HIER_FIELDS, [
-        ["base", ".", "."],
-        ["apo", "pocket", "base"],
-        ["bound", "pocket", "base"],
-        ["pose_1", "ligand_pose", "bound"],
-        ["pose_2", "ligand_pose", "bound"],
+    hier = fmt_loop("pdbx_heterogeneity_hierarchy", HIER_KIND_FIELDS, [
+        ["apo", "pocket", "compositional"],
+        ["bound", "pocket", "compositional"],
+        ["pose_1", "ligand_pose", "conformational"],
+        ["pose_2", "ligand_pose", "conformational"],
     ])
-    write_cif("7HHS_apo_bound.cif", "7HHS_apo_bound", NESTING_HEADER,
-              _hhs_atoms(), cut_note(), alt_groups(_hhs_members()), hier)
-
-
-def apo_bound_occ():
-    hier = fmt_loop("pdbx_heterogeneity_hierarchy", HIER_OCC_FIELDS, [
-        ["base", ".", ".", ".", ".", "1.0", "."],
-        ["apo", "pocket", "base", "complete", "refined", ".", "compositional"],
-        ["bound", "pocket", "base", "complete", "refined", ".", "compositional"],
-        ["pose_1", "ligand_pose", "bound", "complete", "refined", ".", "conformational"],
-        ["pose_2", "ligand_pose", "bound", "complete", "refined", ".", "conformational"],
+    # One bundle: the pocket conformation and which pose is present are the same choice, so the
+    # two coexistence groups are correlated and their joint is enumerated together. `fit` --
+    # these populations are the refined ones.
+    states, members = het_states("ligand_site", "fit", [
+        (0.78, ["apo"], "apo -- the ligand is absent, and this state has no ligand atoms at all"),
+        (0.13, ["bound", "pose_1"], "bound, ligand in pose_1"),
+        (0.09, ["bound", "pose_2"], "bound, ligand in pose_2"),
     ])
-    header = NESTING_HEADER + """
-This copy also carries the occupancy specification columns on the hierarchy.
-"""
-    write_cif("7HHS_apo_bound_occ.cif", "7HHS_apo_bound_occ", header,
-              _hhs_atoms(), cut_note(), alt_groups(_hhs_members()), hier)
+    write_cif("7HHS_apo_bound.cif", "7HHS_apo_bound", HHS_HEADER,
+              _hhs_atoms(),
+              cut_note("which pose accompanies the bound pocket, and how often, has no "
+                       "representation here -- _atom_site carries only the four marginals"),
+              alt_groups(_hhs_members()), hier, states, members)
 
 
 def arg74_clash():
@@ -395,15 +430,17 @@ def arg74_clash():
         ("arg74_D", "A", 74, 74, "D", "."),
         ("wat468_E", "A", 468, 468, "E", "."),
     ]
-    hier = fmt_loop("pdbx_heterogeneity_hierarchy", HIER_OCC_FIELDS, [
-        ["base", ".", ".", ".", ".", "1.0", "."],
-        ["arg74_B", "arg74", "base", "complete", "refined", ".", "conformational"],
-        ["arg74_C", "arg74", "base", "complete", "refined", ".", "conformational"],
-        ["arg74_D", "arg74", "base", "complete", "refined", ".", "conformational"],
-        ["wat468_E", "water468", "base", "incomplete", "refined", ".", "compositional"],
+    hier = fmt_loop("pdbx_heterogeneity_hierarchy", HIER_KIND_FIELDS, [
+        ["arg74_B", "arg74", "conformational"],
+        ["arg74_C", "arg74", "conformational"],
+        ["arg74_D", "arg74", "conformational"],
+        ["wat468_E", "water468", "compositional"],
     ])
+    # No bundle: the rotamer and the water are otherwise independent and there are no joint
+    # populations to record. The single fact worth writing down is that one pairing is
+    # sterically impossible -- a zero in the joint, which is one row and costs nothing.
     excl = fmt_loop("pdbx_state_coexistence",
-                    ["id", "rule", "heterogeneity_id", "heterogeneity_ids"],
+                    ["id", "rule", "alt_group_id", "alt_group_ids"],
                     [["1", "NOT", "arg74_B", "wat468_E"]])
     assert "468" in present, "HOH 468 missing from carve"
     write_cif(
@@ -411,7 +448,15 @@ def arg74_clash():
         """
 Calmodulin (PDB 5E1N), Arg74 and its neighbours, plus water 468.
 Deposited coordinates, copied verbatim; hydrogens omitted.
-        """, atoms, cut_note(), alt_groups(members), hier, excl)
+
+Arg74 alternate B lands 2.14 A from the water -- a clash, not a hydrogen bond. Alternates C
+and D clear it at 3.97 and 4.80 A. There is no bundle here: nothing says the water's presence
+is correlated with C rather than D, and no joint populations are known. One forbidden pairing
+is the whole of what this file adds.
+        """, atoms,
+        cut_note("that one rotamer and the water cannot both be present has no representation "
+                 "here -- they are not alternatives of each other"),
+        alt_groups(members), hier, excl)
 
 
 # --------------------------------------------------------------------------- constructed cases
@@ -481,15 +526,14 @@ def centroid(P):
 
 
 def two_pocket():
-    """The two pockets, in both encodings. Constructed -- there is no deposited counterpart --
-    but with real chemistry: ethylene glycol (EDO) built to its ideal internal geometry, a phenol
-    ring for the ligand, and every non-bonded contact between coexisting groups kept above 3.0 A.
-    The protein scaffold is a real 1EJG tripeptide.
+    """Two adjacent pockets whose fillings are correlated. Constructed -- there is no deposited
+    counterpart -- but with real chemistry: ethylene glycol (EDO) built to its ideal internal
+    geometry, a phenol ring for the ligand, and every non-bonded contact between coexisting
+    groups kept above 3.0 A. The protein scaffold is a real 1EJG tripeptide.
 
-    Emits the same atoms twice, under two different hierarchies. `_flat` parents both pockets to
-    `base`, which reads as "independent" and admits states the occupancies forbid; the plain file
-    parents the bottom pocket to EDO1, which is what the numbers actually say. The page shows them
-    in that order.
+    The four marginals (.50 / .50 / .30 / .20) are all _atom_site can carry, and they are
+    consistent with infinitely many different pairings. The six states say which pairing it
+    actually is -- and it is a genuinely correlated one, not the product of the marginals.
     """
     scaffold = carve("1EJG", lambda r: in_range(r, "A", 14, 16))
 
@@ -562,135 +606,41 @@ def two_pocket():
 CONSTRUCTED -- not deposited data. The peptide scaffold is a real 1EJG tripeptide; the
 occupants are built to their correct internal geometry (ethylene glycol C-C 1.512 A /
 C-O 1.423 A; a planar phenol ring) and placed so that nothing clashes.
+
+The top pocket (residue 501) holds the phenol ligand or EDO1, at 0.50 each; the bottom pocket
+(residue 502) holds EDO2 at 0.30, EDO3 at 0.20, or nothing. Those four numbers are the
+marginals, and they are all _atom_site can hold. The six states below are the joint: what the
+bottom pocket does depends on what sits above it, and the majority species is EDO1 + EDO2 at
+0.25 -- which is nowhere near the 0.15 that independence would predict.
     """
 
-    # The flat encoding, kept as a worked negative. Both pockets hang off `base` as siblings,
-    # which says they vary independently -- so a consumer enumerates the full cartesian product,
-    # including Ligand together with EDO2. The occupancies forbid that state (the bottom pocket
-    # sums to 0.50, exactly O(EDO1)), so the encoding contradicts its own numbers. Nothing is
-    # added to rescue it: the point of the file is what a wrong parent fails to say.
-    flat = fmt_loop("pdbx_heterogeneity_hierarchy", HIER_OCC_FIELDS, [
-        ["base", ".", ".", ".", ".", "1.0", "."],
-        ["Ligand", "top_pocket", "base", "complete", "refined", ".", "compositional"],
-        ["EDO1", "top_pocket", "base", "complete", "refined", ".", "compositional"],
-        ["EDO2", "bot_pocket", "base", "incomplete", "refined", ".", "compositional"],
-        ["EDO3", "bot_pocket", "base", "incomplete", "refined", ".", "compositional"],
+    # Which networks exclude one another, and nothing else: the two occupants of a pocket are
+    # alternatives at that pocket. The relation BETWEEN the pockets is not exclusion, it is
+    # correlation, and it lives in the state table.
+    hier = fmt_loop("pdbx_heterogeneity_hierarchy", HIER_KIND_FIELDS, [
+        ["Ligand", "top_pocket", "compositional"],
+        ["EDO1", "top_pocket", "compositional"],
+        ["EDO2", "bot_pocket", "compositional"],
+        ["EDO3", "bot_pocket", "compositional"],
     ])
-    write_cif(
-        "constructed_two_pocket_flat.cif", "constructed_two_pocket_flat", provenance, atoms,
-        cut_note("both pockets are parented to `base`, which says they vary independently -- "
-                 "that the bottom pocket is ordered only within EDO1 has no representation here"),
-        alt_groups(members), flat)
-
-    # The same atoms and the same occupancies, correctly parented. The bottom pocket is a choice
-    # that exists only inside the EDO1 population, so EDO1 is its parent and the group is
-    # complete: 0.30 + 0.20 = 0.50 = O(EDO1) then follows from the tree, no relationship row
-    # needed -- the same shape as pose_1/pose_2 nesting under `bound` in 7HHS.
-    nested = fmt_loop("pdbx_heterogeneity_hierarchy", HIER_OCC_FIELDS, [
-        ["base", ".", ".", ".", ".", "1.0", "."],
-        ["Ligand", "top_pocket", "base", "complete", "refined", ".", "compositional"],
-        ["EDO1", "top_pocket", "base", "complete", "refined", ".", "compositional"],
-        ["EDO2", "bot_pocket", "EDO1", "complete", "refined", ".", "compositional"],
-        ["EDO3", "bot_pocket", "EDO1", "complete", "refined", ".", "compositional"],
+    # One bundle: the two pockets are entangled, so their joint distribution is enumerated
+    # together. States 3 and 6 name only their top occupant -- an empty bottom pocket is spelled
+    # by omission. Column sums recover the marginals: Ligand .05+.15+.30 = .50, EDO1 .25+.05+.20
+    # = .50, EDO2 .05+.25 = .30, EDO3 .15+.05 = .20. `assert` -- constructed, nothing fitted it.
+    states, members_loop = het_states("edo_site", "assert", [
+        (0.05, ["Ligand", "EDO2"], "Ligand + EDO2 -- rare, the phenol ring crowds the lower pocket"),
+        (0.15, ["Ligand", "EDO3"], "Ligand + EDO3"),
+        (0.30, ["Ligand"], "Ligand, lower pocket empty"),
+        (0.25, ["EDO1", "EDO2"], "EDO1 + EDO2 -- the majority species"),
+        (0.05, ["EDO1", "EDO3"], "EDO1 + EDO3"),
+        (0.20, ["EDO1"], "EDO1, lower pocket empty"),
     ])
     write_cif(
         "constructed_two_pocket.cif", "constructed_two_pocket", provenance, atoms,
-        cut_note("the bottom pocket is ordered only within the EDO1 population, "
-                 "so EDO1 is its parent and the group is complete"),
-        alt_groups(members), nested)
-
-
-# --------------------------------------------------------------------------- constructed lock
-
-def ncs_lock():
-    """The cross-branch lock. Constructed -- and unavoidably so: the tie is exactly the thing
-    deposition discards, so no deposited file can carry it. What a real entry leaves behind is
-    two NCS copies landing at the same occupancy, which is the trace of the restraint, not the
-    restraint.
-
-    Two copies of a real 1EJG tripeptide related by a proper NCS operator (a 2-fold, then a
-    translation), each with one ethylene glycol at partial occupancy in the equivalent site.
-    Neither copy is the other's parent and no occupancy group contains both, so no parent link
-    can tie them -- which is what `_pdbx_occupancy_relationship` type `equal` is for.
-    """
-    scaffold = carve("1EJG", lambda r: in_range(r, "A", 14, 16))
-    sc_xyz = [(float(a["Cartn_x"]), float(a["Cartn_y"]), float(a["Cartn_z"]))
-              for a in scaffold if a["type_symbol"] != "H"]
-    cx, cy, cz = centroid(sc_xyz)
-
-    # Seat one glycol against the peptide: in van der Waals contact (2.7-4.5 A), and of the
-    # placements that satisfy that, the most compact -- same criterion as two_pocket.
-    best = None
-    for radius in (5.0, 5.5, 6.0, 6.5, 7.0, 7.5):
-        for theta in range(0, 360, 10):
-            for phi in (55, 70, 90, 110, 125):
-                t, p = math.radians(theta), math.radians(phi)
-                u = (math.sin(p) * math.cos(t), math.sin(p) * math.sin(t), math.cos(p))
-                pos = (cx + radius * u[0], cy + radius * u[1], cz + radius * u[2])
-                cand = het_atoms("EDO", "A", 601, 0.40, 28.0, "2", "B", edo_atoms(*pos))
-                occ = xyz_of(cand)
-                if not (2.7 <= min_pair(occ, sc_xyz) <= 4.5):
-                    continue
-                allp = sc_xyz + occ
-                gc = centroid(allp)
-                span = max(math.dist(q, gc) for q in allp)
-                if best is None or span < best[0]:
-                    best = (span, cand)
-    if best is None:
-        raise SystemExit("constructed_ncs_lock: could not seat the glycol against the scaffold")
-    copy_a = list(scaffold) + best[1]
-
-    # A proper NCS operator: a 2-fold about the axis through the copy's centroid parallel to z,
-    # then a 16 A translation. Rigid, so copy B is geometrically identical to copy A -- which is
-    # what makes the two sites equivalent and the equal-occupancy tie meaningful.
-    def ncs(p):
-        x, y, z = p
-        return (cx - (x - cx) + 16.0, cy - (y - cy), z)
-
-    ASYM_B = {"A": "F", "B": "G"}
-    copy_b = []
-    for a in copy_a:
-        x, y, z = ncs((float(a["Cartn_x"]), float(a["Cartn_y"]), float(a["Cartn_z"])))
-        b = dict(a)
-        b["Cartn_x"], b["Cartn_y"], b["Cartn_z"] = f"{x:.3f}", f"{y:.3f}", f"{z:.3f}"
-        b["auth_asym_id"] = "B"
-        b["label_asym_id"] = ASYM_B.get(a["label_asym_id"], "H")
-        copy_b.append(b)
-
-    gap = min_pair(xyz_of(copy_a), xyz_of(copy_b))
-    if gap < 3.0:
-        raise SystemExit(f"constructed_ncs_lock: the two copies clash ({gap:.2f} A)")
-
-    atoms = copy_a + copy_b
-    members = [
-        ("edo_A", "A", 601, 601, "A", "."),
-        ("edo_B", "B", 601, 601, "A", "."),
-    ]
-    # Each glycol is a lone partial network: no sibling, no sum rule -- `single`, not `incomplete`.
-    hier = fmt_loop("pdbx_heterogeneity_hierarchy", HIER_OCC_FIELDS, [
-        ["base", ".", ".", ".", ".", "1.0", "."],
-        ["edo_A", "siteA", "base", "single", "refined", ".", "compositional"],
-        ["edo_B", "siteB", "base", "single", "refined", ".", "compositional"],
-    ])
-    rel = fmt_loop("pdbx_occupancy_relationship",
-                   ["id", "type", "target", "enforced", "details"],
-                   [["1", "equal", "edo_A", "annotation",
-                     "'NCS-related copies restrained to equal occupancy'"]])
-    mem = fmt_loop("pdbx_occupancy_relationship_member",
-                   ["relationship_id", "state_id"],
-                   [["1", "edo_B"]])
-    write_cif(
-        "constructed_ncs_lock.cif", "constructed_ncs_lock",
-        """
-CONSTRUCTED -- not deposited data. Two copies of a real 1EJG tripeptide related by a proper
-NCS operator (a 2-fold, then a 16 A translation), each carrying one ethylene glycol built to
-its correct internal geometry (C-C 1.512 A / C-O 1.423 A) in the equivalent site, at the same
-partial occupancy. No deposited file can carry the tie itself: the restraint that produced the
-equal occupancies is discarded at deposition, which is the gap this proposal is about.
-        """, atoms,
-        cut_note("the two sites sit in different branches and neither is the other's parent, "
-                 "so no parent link can say their occupancies are locked together"),
-        alt_groups(members), hier, rel, mem)
+        cut_note("which bottom-pocket occupant accompanies which top-pocket occupant, and in "
+                 "what proportion, has no representation here -- the four marginals above are "
+                 "consistent with infinitely many different pairings"),
+        alt_groups(members), hier, states, members_loop)
 
 
 def main():
@@ -701,10 +651,8 @@ def main():
     ca_site()
     gln8_split()
     apo_bound()
-    apo_bound_occ()
     arg74_clash()
     two_pocket()
-    ncs_lock()
 
 
 if __name__ == "__main__":

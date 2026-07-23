@@ -108,7 +108,7 @@ function Section({
 }: {
   id: string;
   title?: string;
-  /** The one-line "what this changes, and what it improves on" under the title. In Part IV every
+  /** The one-line "what this changes, and what it improves on" under the title. In Part III every
    *  section carries one, so a reader can tell at a glance which category is on trial and what it
    *  is being compared against. ReactNode, not string, so it can carry live <It> chips. */
   subtitle?: ReactNode;
@@ -202,24 +202,19 @@ const PARTS: { part?: string; title: string; sections: { id: string; label: stri
   },
   {
     part: "I",
-    title: "The problem: which alternates go together",
-    sections: [{ id: "problem", label: "What the file records, and what it leaves out" }],
-  },
-  {
-    part: "II",
     title: "What mmCIF encodes today",
     sections: [
       { id: "today", label: "The letter and the occupancy" },
-      { id: "escalator", label: "Where the two columns run out" },
+      { id: "escalator", label: "Where the altlocs and occupancy become insufficient" },
     ],
   },
   {
-    part: "III",
+    part: "II",
     title: "The proposal",
     sections: [{ id: "categories", label: "The proposed categories" }],
   },
   {
-    part: "IV",
+    part: "III",
     title: "The cases",
     sections: [
       { id: "networks", label: "Explicit state grouping" },
@@ -229,13 +224,9 @@ const PARTS: { part?: string; title: string; sections: { id: string; label: stri
     ],
   },
   {
-    part: "V",
+    part: "IV",
     title: "Open problems",
     sections: [{ id: "open", label: "Open problems" }],
-  },
-  {
-    title: "Appendix — the examples",
-    sections: [{ id: "examples", label: "The example files" }],
   },
 ];
 
@@ -339,69 +330,30 @@ export default function ProposalPage() {
 
           <Section id="inventory" title="How the PDB encodes heterogeneity today">
             <p>
-              Several parts of the PDBx/mmCIF dictionary already record that the copies of a molecule
-              differ from one another, some historical. The proposed extension provides an alternative mechanism anoter alternative mechanism yet, but its addition is motivated by the shortcomings of the categories listed here (elaborated on below) .
-Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_alt_id" /> and <It cat="atom_site" field="occupancy" /> and their interplay. Others are either outside of the structural scope of this document or defacto obsolete.
-              
-              </p>
+              Several parts of the PDBx/mmCIF dictionary already record that the copies of a
+              molecule differ from one another, some of them historical. The extension proposed here
+              is one more such mechanism, and its addition is motivated by the shortcomings of the
+              categories listed below. Of these, the two this document is about are{" "}
+              <It cat="atom_site" field="label_alt_id" /> and{" "}
+              <It cat="atom_site" field="occupancy" /> and their interplay; the others are either
+              outside its scope or de facto obsolete.
+            </p>
             <MethodsInventory />
-            <p>
-              </p>
           </Section>
 
-          <PartDivider part="I" title="The problem: which alternates go together" />
+          <PartDivider part="I" title="What mmCIF encodes today" />
 
-          <Section id="problem" title="What the file records, and what it leaves out">
+          <Section id="today" title="The letter and the occupancy">
             <p>
               A coordinate file describes an average over many copies of a molecule. (An X-ray
               structure is an average because diffraction measures every copy in the crystal at once,
               but what follows is about what the file can write down, not about how the data were
-              collected.) Two per-atom columns carry the heterogeneity:{" "}
-              <It cat="atom_site" field="label_alt_id" /> says which alternate an atom belongs to,
-              and <It cat="atom_site" field="occupancy" /> says in what fraction of the copies it is
-              present.
+              collected.)
             </p>
             <p>
-              Both describe one item at a time: how often it appears, on its own. Neither says which
-              alternates appear in the same copy or <em>state</em>. We tackle this later. 
-              Here is a toy/abstract example where this becomes problematic:<em>The top site holds one of two occupants (X or Y), and
-              the bottom site holds one of two others(P or Q); each of the four members is present in half of the
-              copies of the crystal.</em>
-              Three physically different crystals then produce a byte-for-byte identical
-              file:
-            </p>
-            <ThreeAnswers />
-            <p>
-              Each table counts, out of 100 copies, how often a pair of occupants is found together.
-              The numbers along the edges (the marginals) — how often each occupant appears at all — are what the
-              file records, and they are identical in all three. The interiors (the joints) are completely
-              different, and the interior is what the file has no way to write down. In the first,
-              the two sites are filled independently; in the second, they always go together; in the
-              third, they never do.
-            </p>
-            <p>
-              Everything that follows is about those two things and their names. The edge numbers are{" "}
-              <em>marginals</em>, one per occupant, and <It cat="atom_site" field="occupancy" /> is
-              exactly a column of them. The interior is the <em>joint</em>, and{" "}
-              <Ref to="states">the extension&rsquo;s central category</Ref> is a way of writing one
-              interior cell per row.
-            </p>
-            <p>
-              The altloc letter cannot recover the difference, because what it guarantees is local:
-              within a small region, alternate A goes with A and never with B. It says nothing about
-              whether A at one residue and A two hundred residues away are the same physical state —
-              and, as <Ref to="today">the deposited file in Part II</Ref> shows, two neighbouring
-              parts of one structure routinely use different letters for the same thing.
-            </p>
-          </Section>
-
-          <PartDivider part="II" title="What mmCIF encodes today" />
-
-          <Section id="today" title="The letter and the occupancy">
-            <p>
-              A few small categories declare what
-              the molecule is, and one large category, <Cat name="atom_site" />, holds the
-              coordinates and points back at them through shared keys. Below is a complete, valid
+              A few small categories declare what the molecule is, and one large category,{" "}
+              <Cat name="atom_site" />, holds the coordinates and points back at them through shared
+              keys. Below is a complete, valid
               file for three residues of crambin, with no heterogeneity in it at all — every atom is
               fully present, at occupancy 1.00 and with no alternate-location letter.
             </p>
@@ -424,9 +376,11 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
               caption="The atoms on the right are exactly the rows of the _atom_site loop on the left."
             />
             <p>
-              Heterogeneity enters through the two columns: <It cat="atom_site" field="label_alt_id" /> and <It cat="atom_site" field="occupancy" />. Here one arginine side chain is modelled
-              in two positions, <C>A</C> at 0.67 and <C>B</C> at 0.33, summing to one within the
-              residue. Its backbone carries no letter at all: it is single-conformer and shared by
+              Heterogeneity enters through two per-atom columns:{" "}
+              <It cat="atom_site" field="label_alt_id" /> says which alternate an atom belongs to,
+              and <It cat="atom_site" field="occupancy" /> says in what fraction of the copies it is
+              present. Here one arginine side chain is modelled in two positions, <C>A</C> at 0.67
+              and <C>B</C> at 0.33, summing to one within the residue. Its backbone carries no letter at all: it is single-conformer and shared by
               both alternatives.
             </p>
             <StageFigure
@@ -455,31 +409,6 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
                 </>
               }
             />
-            <p>
-              Two further pieces of the existing format matter later.{" "}
-              <Cat name="struct_conn" />, the sparse bond table, records the connections that a
-              template cannot supply — disulfides, links, metal coordination. Each partner is named
-              by a full atom key that includes the altloc letter (
-              <It cat="struct_conn" field="pdbx_ptnr1_label_alt_id" bare />,{" "}
-              <It cat="struct_conn" field="pdbx_ptnr2_label_alt_id" bare />
-              ), so a bond can belong to one alternate and not another. And there is a legacy
-              mechanism for grouping the letters, which is dormant in practice:
-            </p>
-            {/* <Aside summary="_atom_sites_alt — the existing grouping mechanism, and why it is not enough">
-              <p>
-                <Cat name="atom_sites_alt" /> names altloc letters and describes them, and{" "}
-                <Cat name="atom_sites_alt_ens" /> with <Cat name="atom_sites_alt_gen" /> collects
-                them into ensembles. So the dictionary has had a place to group alternates for a long
-                time.
-              </p>
-              <p>
-                It is not used for the problem described here, and it could not be. The grouping is
-                global — a letter is named once for the whole file, with no residue scoping — so it
-                inherits the overloaded-letter problem shown below rather than solving it. It carries
-                no parent/child relation between alternates, and no occupancy semantics. The
-                extension proposed here supersedes it.
-              </p>
-            </Aside> */}
             <p>
               The mechanism above works because everything it relates sits inside one residue. It
               stops working as soon as a relationship spans more than one.
@@ -531,17 +460,26 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
             />
           </Section>
 
+          {/* An interlude, not a section: no title, no nav entry, and it carries an id only so that
+              the two places in Part III that lean on it can point back here. It sits at the end of
+              Part I because it is the concrete case the escalator below then generalises, and
+              because it only makes sense once the reader has met both columns. */}
+          <Section id="marginals">
+            <Interlude />
+          </Section>
+
           <Section id="escalator" title="Where the altlocs and occupancy become insufficient">
             <p>
               Seven cases, in increasing order of difficulty. The first is handled completely by
               what exists today; each one after it asks for something the letter and the occupancy
-              cannot supply. The last is expressible here too, but at a price worth naming, so it
-              points at Part V rather than at a case.
+              cannot supply. The two sites above are case 5, in the same shape and with real
+              occupants. The last is expressible here too, but at a price worth naming, so it points
+              at Part IV rather than at a case.
             </p>
             <Escalator />
           </Section>
 
-          <PartDivider part="III" title="The proposal" />
+          <PartDivider part="II" title="The proposal" />
 
           <Section id="categories" title="The proposed categories">
             <p>
@@ -550,7 +488,7 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
               occur <em>together</em>, in what proportion. They point <em>into</em>{" "}
               <Cat name="atom_site" /> through the keys it already has and add no column to it, so a
               program that does not know them reads exactly the coordinates it reads today. Each is
-              applied to a real case in <Ref to="networks">Part IV</Ref>.
+              applied to a real case in <Ref to="networks">Part III</Ref>.
             </p>
             <CategoryReference />
             <p>
@@ -569,7 +507,7 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
             </p>
           </Section>
 
-          <PartDivider part="IV" title="The cases" />
+          <PartDivider part="III" title="The cases" />
 
           <Section
             id="networks"
@@ -582,7 +520,7 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
             }
           >
             <p>
-              The deposited file from <Ref to="today">Part II</Ref> has the letter <C>B</C> in two
+              The deposited file from <Ref to="today">Part I</Ref> has the letter <C>B</C> in two
               stretches of one chain, and nothing in it says whether those two <C>B</C>s are the same
               physical state or two unrelated choices that happen to share a letter. A reader has to
               guess from the occupancies. Two small side tables remove the guess.
@@ -673,8 +611,8 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
             <p>
               The optional <It cat="pdbx_alt_groups" field="label_atom_id" /> is the escape hatch:
               when a membership row names an atom, it claims exactly that atom and nothing else. A
-              membership table with it is precisely as expressive as a per-atom state label, reuses the fields that are already present on
-              <Cat name="atom_site" />.
+              membership table with it is precisely as expressive as a per-atom state label, and it
+              reuses fields that are already present on <Cat name="atom_site" />.
             </p>
             <StageFigure
               id="5E1N_gln8_split"
@@ -735,9 +673,9 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
             <p>
               Everything so far names alternates and says which of them exclude one another. Neither
               says which alternates are found in the <em>same</em> copy, and that is the quantity{" "}
-              <Ref to="problem">Part I</Ref> was about: <It cat="atom_site" field="occupancy" /> is a
-              list of marginals, one per network, and the same list is produced by physically
-              different structures.
+              <Ref to="marginals">the interlude at the end of Part I</Ref> was about:{" "}
+              <It cat="atom_site" field="occupancy" /> is a list of marginals, one per network, and
+              the same list is produced by physically different structures.
             </p>
             <p>
               <Cat name="pdbx_het_state" /> writes the missing quantity down directly, one row per
@@ -778,7 +716,7 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
                     Note also that the ligand&rsquo;s letters (B, C) do not line up with the
                     pocket&rsquo;s (A, B). &ldquo;B&rdquo; on residue 201 and &ldquo;B&rdquo; on
                     residue 22 are different physical states that happen to share a letter — the same
-                    local-letter problem as in Part II, in a second entry.
+                    local-letter problem as in Part I, in a second entry.
                   </p>
                 </>
               }
@@ -799,7 +737,7 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
             </p>
             <p>
               The second case is the one the marginals cannot decide, and it is the pair of pockets
-              from <Ref to="problem">Part I</Ref>. A phenol ligand or a
+              from <Ref to="marginals">the interlude</Ref>, with real occupants. A phenol ligand or a
               glycol sits in a top pocket at 0.50 each; a second glycol sits in a bottom pocket at
               0.30, a third at 0.20, or the pocket is empty. Those four numbers are everything a
               deposited file carries today, and they are consistent with any number of different
@@ -849,7 +787,7 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
               whose numbers are identical can differ entirely in what those numbers are worth, and
               the coordinates do not show it. The 7HHS figure is <C>fit</C>, the constructed one{" "}
               <C>assert</C>. <Ref to="open">Where a joint occupancy can come from at all</Ref> is
-              discussed in Part V, and it is not a small question.
+              discussed in Part IV, and it is not a small question.
             </p> */}
           </Section>
 
@@ -864,7 +802,7 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
             }
           >
             <p>
-              A bundle woudl be the right tool when you know the populations. We can imagine a case where you know only that
+              A bundle is the right tool when you know the populations. We can imagine a case where you know only that
               one combination is impossible — no proportions, no correlation, just a pairing that
               cannot happen. That is a single zero in the joint distribution, and building a whole
               bundle around it would mean inventing the other numbers.
@@ -921,7 +859,7 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
             />
           </Section>
 
-          <PartDivider part="V" title="Open problems" />
+          <PartDivider part="IV" title="Open problems" />
 
           <Section id="open">
             <h3 className="pt-2 text-[15px] font-semibold text-slate-900">Does this blow up?</h3>
@@ -936,9 +874,10 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
             </p>
             <p>
               A genuine blow-up therefore needs one bundle of fifteen or twenty mutually entangled
-              switches — and it seems impossible to refine, measure or otherwise determine a fifteen-way joint
-              distribution from one experiment. So i don't think this is a problem in pracitce.. Also something like BinaryCIF would compress away these quite repetitive table quite nicely.
-               What remains open is whether some class of
+              switches — and it seems impossible to refine, measure or otherwise determine a
+              fifteen-way joint distribution from one experiment, so I don&rsquo;t think this is a
+              problem in practice. Something like BinaryCIF would also compress these rather
+              repetitive tables away quite nicely. What remains open is whether some class of
               structure has a bundle much bigger than anything we have looked at.
             </p>
             <h3 className="pt-2 text-[15px] font-semibold text-slate-900">
@@ -950,7 +889,8 @@ Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_a
               marginal occupancy and nothing more. The joint — which bottom-pocket occupant goes with
               which top-pocket occupant — is a correlation between sites, a many-body quantity, and
               standard refinement against Bragg data does not produce it afaik, let alone CryoEM data. Two crystals with the same
-              marginals and completely different correlations give the same average density (see the section about marginals).
+              marginals and completely different correlations give the same average density (this is the
+              point <Ref to="marginals">the interlude</Ref> makes with three tables).
             </p>
           </Section>
 
@@ -1043,7 +983,7 @@ function MethodsInventory() {
   );
 }
 
-// The escalator from Part II to Part III: what breaks, hardest last.
+// The escalator from Part I to Part II: what breaks, hardest last.
 function Escalator() {
   const cases: { text: ReactNode; to: string; where: string }[] = [
     {
@@ -1093,9 +1033,10 @@ function Escalator() {
     {
       text: (
         <>
-          Two adjacent pockets whose fillings depend on each other. Four occupancies are deposited,
-          and they are the same four whether the pockets are correlated, anti-correlated or
-          independent — three different pieces of chemistry, one file.
+          Two adjacent pockets whose fillings depend on each other — the interlude&rsquo;s two sites,
+          with real occupants. Four occupancies are deposited, and they are the same four whether the
+          pockets are paired one way, paired the other, or independent: three different pieces of
+          chemistry, one file.
         </>
       ),
       to: "states",
@@ -1152,243 +1093,301 @@ function Escalator() {
 // component. Columns are listed one by one rather than as a string, so each can be hovered for its
 // own type, mandatory-ness and enumeration.
 function CategoryReference() {
-  const cats: {
-    name: string;
-    role: string;
-    optional?: boolean;
-    desc: ReactNode;
-    cols: { field: string; optional?: boolean }[];
-    child?: { name: string; cols: { field: string; optional?: boolean }[] };
-  }[] = [
-    {
-      name: "pdbx_alt_groups",
-      role: "membership — which atoms make one state",
-      desc: (
-        <>
-          Names a <em>network</em>: a set of atoms that together constitute one alternate state. Each
-          row selects atoms out of <Cat name="atom_site" /> by chain, an inclusive residue range and
-          an altloc letter, optionally narrowed to a single named atom. One network is usually
-          several rows sharing an <C>alt_group_id</C>, so its membership need not be contiguous —
-          that is what lets one name span two stretches of a chain, or claim one atom out of a
-          residue.
-        </>
-      ),
-      cols: [
-        { field: "id" },
-        { field: "alt_group_id" },
-        { field: "auth_asym_id" },
-        { field: "auth_seq_id_start" },
-        { field: "auth_seq_id_end" },
-        { field: "label_alt_id" },
-        { field: "label_atom_id", optional: true },
-      ],
-    },
-    {
-      name: "pdbx_heterogeneity_hierarchy",
-      role: "which networks exclude one another",
-      desc: (
-        <>
-          One row per network, naming the coexistence group it shares with its alternatives — the
-          mutually-exclusive set, which is what a crystallographer calls an occupancy group. At most
-          one member of a group is present in any copy, so their occupancies sum to at most 1; a sum
-          below 1 leaves a fraction of copies with none of them. It says nothing about networks at{" "}
-          <em>different</em> sites — that is the joint, and it lives in the next category.
-        </>
-      ),
-      cols: [
-        { field: "alt_group_id" },
-        { field: "coexistence_group_id", optional: true },
-        { field: "state_kind", optional: true },
-      ],
-    },
-    {
-      name: "pdbx_het_state",
-      role: "the joint — combinations that occur, and how often",
-      desc: (
-        <>
-          One row per combination that actually occurs. Its{" "}
-          <It cat="pdbx_het_state" field="occupancy" bare /> is the <em>joint</em> occupancy of the
-          whole combination — a network&rsquo;s own occupancy, the number{" "}
-          <Cat name="atom_site" /> carries, is the sum over every state containing it. The networks
-          present are listed in the child table, one per row, because an mmCIF cell holds a single
-          value. <It cat="pdbx_het_state" field="bundle_id" bare /> is the unit of correlation:
-          states sharing one enumerate a joint distribution and sum to 1, and networks in different
-          bundles are independent.
-        </>
-      ),
-      cols: [
-        { field: "id" },
-        { field: "bundle_id" },
-        { field: "occupancy" },
-        { field: "provenance", optional: true },
-        { field: "details", optional: true },
-      ],
-      child: {
-        name: "pdbx_het_state_members",
-        cols: [{ field: "state_id" }, { field: "alt_group_id" }],
+  const cats: { name: string; role: string; optional?: boolean; desc: ReactNode; cols: string[] }[] =
+    [
+      {
+        name: "pdbx_alt_groups",
+        role: "membership — which atoms make one state",
+        desc: (
+          <>
+            Names a <em>network</em>: a set of atoms that together constitute one alternate state.
+            Each row selects atoms out of <Cat name="atom_site" /> by chain, an inclusive residue
+            range and an altloc letter, optionally narrowed to a single named atom. One network is
+            usually several rows sharing an <C>alt_group_id</C>, so its membership need not be
+            contiguous — that is what lets one name span two stretches of a chain, or claim one atom
+            out of a residue.
+          </>
+        ),
+        cols: [
+          "id",
+          "alt_group_id",
+          "auth_asym_id",
+          "auth_seq_id_start",
+          "auth_seq_id_end",
+          "label_alt_id",
+          "label_atom_id",
+        ],
       },
-    },
-    {
-      name: "pdbx_state_coexistence",
-      role: "a combination that cannot occur",
-      optional: true,
-      desc: (
-        <>
-          A sparse <C>NOT</C>-only list: each row says two networks may not co-occur. For a zero in
-          the joint where there is no distribution to write — two networks that are otherwise
-          independent, no populations known, one impossible pairing. Not needed inside a coexistence
-          group, whose members already exclude each other, and not needed inside a bundle, which
-          already forbids by omission everything it does not list. Absent from most files; there is
-          exactly one such row in the prototype annotation of 5E1N.
-        </>
-      ),
-      cols: [
-        { field: "id" },
-        { field: "rule" },
-        { field: "alt_group_id" },
-        { field: "alt_group_ids" },
-      ],
-    },
-  ];
+      {
+        name: "pdbx_heterogeneity_hierarchy",
+        role: "which networks exclude one another",
+        desc: (
+          <>
+            One row per network, naming the coexistence group it shares with its alternatives — the
+            mutually-exclusive set, which is what a crystallographer calls an occupancy group. At
+            most one member of a group is present in any copy, so their occupancies sum to at most 1;
+            a sum below 1 leaves a fraction of copies with none of them. It says nothing about
+            networks at <em>different</em> sites — that is the joint, and it lives in the next
+            category.
+          </>
+        ),
+        cols: ["alt_group_id", "coexistence_group_id", "state_kind"],
+      },
+      {
+        name: "pdbx_het_state",
+        role: "the joint — combinations that occur, and how often",
+        desc: (
+          <>
+            One row per combination that actually occurs. Its{" "}
+            <It cat="pdbx_het_state" field="occupancy" bare /> is the <em>joint</em> occupancy of the
+            whole combination — a network&rsquo;s own occupancy, the number <Cat name="atom_site" />{" "}
+            carries, is the sum over every state containing it.{" "}
+            <It cat="pdbx_het_state" field="bundle_id" bare /> is the unit of correlation: states
+            sharing one enumerate a joint distribution and sum to 1, and networks in different
+            bundles are independent.
+          </>
+        ),
+        cols: ["id", "bundle_id", "occupancy", "provenance", "details"],
+      },
+      {
+        name: "pdbx_het_state_members",
+        role: "which networks a state is made of",
+        desc: (
+          <>
+            One row per network present in a state. A state&rsquo;s members are spread over several
+            rows because an mmCIF cell holds a single value, and a network <em>absent</em> in a state
+            simply contributes no row — that omission is also how a state names something with no
+            atoms to label, such as the fraction of copies in which a ligand is not there at all.
+          </>
+        ),
+        cols: ["state_id", "alt_group_id"],
+      },
+      {
+        name: "pdbx_state_coexistence",
+        role: "a combination that cannot occur",
+        optional: true,
+        desc: (
+          <>
+            A sparse <C>NOT</C>-only list: each row says two networks may not co-occur. For a zero in
+            the joint where there is no distribution to write — two networks that are otherwise
+            independent, no populations known, one impossible pairing. Not needed inside a
+            coexistence group, whose members already exclude each other, and not needed inside a
+            bundle, which already forbids by omission everything it does not list. Absent from most
+            files; there is exactly one such row in the prototype annotation of 5E1N.
+          </>
+        ),
+        cols: ["id", "rule", "alt_group_id", "alt_group_ids"],
+      },
+    ];
   return (
-    <div className="my-4">
-      <dl className="divide-y divide-slate-100 border-y border-slate-100">
-        {cats.map((c) => (
-          <div key={c.name} className="py-3">
-            <dt className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <Cat name={c.name} />
-              <span className="text-[11px] text-slate-400">{c.role}</span>
-              {c.optional && (
-                <span className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
-                  optional
-                </span>
-              )}
-            </dt>
-            <dd className="mt-1.5 max-w-[92ch] text-[13px] leading-relaxed text-slate-600">
-              {c.desc}
-            </dd>
-            <dd className="mt-2">
-              <ColumnList cat={c.name} cols={c.cols} />
-            </dd>
-            {c.child && (
-              <dd className="mt-2 border-l-2 border-slate-100 pl-3">
-                <div className="mb-1 flex items-baseline gap-2">
-                  <Cat name={c.child.name} />
-                  <span className="text-[10px] text-slate-400">child member table</span>
-                </div>
-                <ColumnList cat={c.child.name} cols={c.child.cols} />
-              </dd>
+    <div className="my-5 border-t border-slate-200">
+      {cats.map((c) => (
+        <div
+          key={c.name}
+          className="grid gap-x-8 gap-y-3 border-b border-slate-200 py-5 md:grid-cols-[minmax(0,210px)_minmax(0,1fr)]"
+        >
+          <div>
+            <Cat name={c.name} />
+            <div className="mt-1.5 text-[11px] leading-snug text-slate-400">{c.role}</div>
+            {c.optional && (
+              <div className="mt-1 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+                optional
+              </div>
             )}
           </div>
-        ))}
-      </dl>
-      {/* <p className="mt-2 text-[11.5px] text-slate-400">
-        Hover any name for its dictionary definition — description, type, and the values it may take.
-        Mandatory columns are set in <span className="font-semibold text-slate-700">dark</span>;{" "}
-        <span className="text-slate-400">grey</span> ones are optional and may be omitted or written
-        as <C>.</C> — an arrow marks a column that points at another category&rsquo;s. The five names
-        above are the proposal; every <em>other</em> mmCIF name on this page already exists, and
-        links to its published definition in the{" "}
-        <a
-          href={DICT_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline decoration-slate-300 underline-offset-2 hover:text-slate-600"
-        >
-          wwPDB dictionary
-        </a>
-        . If a name is not a link, this page is asking for it.
-      </p> */}
+          <div>
+            <p className="max-w-[80ch] text-[13px] leading-relaxed text-slate-600">{c.desc}</p>
+            <ColumnList cat={c.name} cols={c.cols} />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
-// One category's columns. The foreign-key target is read from the dictionary itself (Item.parents),
-// so it cannot drift out of step with the .dic the way a hardcoded list would.
-function ColumnList({ cat, cols }: { cat: string; cols: { field: string; optional?: boolean }[] }) {
+// One category's columns, as an aligned table. Type, mandatory-ness, key-ness and the foreign-key
+// target are all read from the loaded dictionary rather than written out here, so this cannot drift
+// out of step with mmcif_pdbx_v50_het_ext.dic the way a hardcoded list would. The name stays an
+// MmcifChip, so hovering it still raises the full definition with its enumerations.
+function ColumnList({ cat, cols }: { cat: string; cols: string[] }) {
   const dict = useStore((s) => s.dict);
+  const keys = new Set(dict?.categories[cat]?.keys ?? []);
   return (
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5">
-      {cols.map((col) => {
-        const parent = dict?.items[`_${cat}.${col.field}`]?.parents?.[0];
-        return (
-          <span key={col.field} className="inline-flex items-baseline">
-            <MmcifChip
-              target={{ kind: "item", cat, field: col.field }}
-              variant="inline"
-              className={`cursor-help rounded px-1 py-0.5 font-mono text-[10.5px] ${
-                col.optional
-                  ? "bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                  : "bg-slate-100 font-semibold text-slate-700 hover:bg-slate-200 hover:text-slate-900"
-              }`}
-            >
-              {col.field}
-            </MmcifChip>
-            {parent && (
-              <span className="ml-0.5 font-mono text-[9.5px] text-slate-300" title={`points at ${parent}`}>
-                →{parent.replace(/^_/, "")}
-              </span>
-            )}
-          </span>
-        );
-      })}
+    <div className="mt-3 overflow-x-auto">
+      <table className="border-collapse font-mono text-[10.5px]">
+        <tbody>
+          {cols.map((field) => {
+            const item = dict?.items[`_${cat}.${field}`];
+            const isKey = keys.has(`_${cat}.${field}`);
+            const optional = item?.mandatory === "no";
+            const parent = item?.parents?.[0];
+            return (
+              <tr key={field} className="align-baseline">
+                <td className="py-[3px] pr-5">
+                  <MmcifChip
+                    target={{ kind: "item", cat, field }}
+                    variant="inline"
+                    className={`cursor-help rounded px-1 py-0.5 ${
+                      optional
+                        ? "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                        : "font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                    }`}
+                  >
+                    {field}
+                  </MmcifChip>
+                </td>
+                <td className="py-[3px] pr-5 text-slate-400">{item?.type ?? ""}</td>
+                <td className="py-[3px] pr-5 text-slate-400">
+                  {isKey ? "key" : optional ? "optional" : "required"}
+                </td>
+                <td className="py-[3px] text-slate-300" title={parent ? `points at ${parent}` : undefined}>
+                  {parent ? `→ ${parent.replace(/^_/, "")}` : ""}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
 
+// The interlude that closes Part I. The occupants are deliberately unnamed: the two-pocket case and
+// its real names arrive in Part III, and borrowing them here would be nomenclature the reader has
+// not met. The whole block is one inset panel rather than a section, because it interrupts the
+// argument to make one point concrete and then hands straight back to it.
+function Interlude() {
+  return (
+    <div className="my-3 rounded border border-slate-200 bg-slate-50/40 px-5 py-4">
+      <div className="mb-2 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+        interlude — two sites, one file, three crystals
+      </div>
+      <p className="max-w-[86ch]">
+        Both columns describe one thing at a time: how often it appears, on its own. Neither says
+        which alternates appear in the <em>same</em> copy. Take a structure with two nearby sites.
+        The top site holds either <C>X</C> or <C>Y</C>; the bottom site holds either <C>P</C> or{" "}
+        <C>Q</C>; each of the four is modelled at occupancy 0.50, present in half the copies of the
+        crystal. Three physically different crystals then produce a byte-for-byte identical file.
+      </p>
+      <ThreeAnswers />
+      <p className="mt-4 max-w-[86ch]">
+        Each table counts, out of 100 copies, how often a pair of occupants is found in the same
+        copy — the four interior cells are the <em>joint</em> distribution. The numbers along the
+        edges are the row and column sums of that interior: the <em>marginals</em>. A marginal is
+        precisely what one occupant&rsquo;s occupancy is — how often it appears at all, added up
+        over whatever the other site happens to be doing — so all three crystals have the same four
+        marginals, and this is everything the deposited file carries about the two sites:
+      </p>
+      <OccupancyBlock />
+      <p className="mt-4 max-w-[86ch]">
+        Four rows of <It cat="atom_site" field="occupancy" />, one per occupant, all 0.50, and the
+        letters restart at <C>A</C> in each site because a letter is scoped to the residue it sits
+        in — the same overloaded-letter problem the deposited 5E1N file has above. The interiors are
+        completely different, and there is no column in which an interior cell could be written. In
+        the first crystal the two sites are filled independently; in the second, <C>X</C> is only
+        ever found with <C>P</C>; in the third, only ever with <C>Q</C>.
+      </p>
+      <p className="mt-3 max-w-[86ch]">
+        This is the central problem. A structure determination measures an <em>aggregate</em> — a
+        density averaged over every copy in the crystal — and an average is a one-body quantity: it
+        carries each site&rsquo;s marginal and discards which occupants shared a copy. Recovering
+        the populations that <em>co-occur</em> is what turns an average back into an ensemble, and
+        it is what a heterogeneity state is: one concrete combination of alternates, together with
+        the fraction of copies that are in it. Without them a file lists parts; with them it lists
+        whole molecules and how many of each there are.{" "}
+        <Ref to="states">The extension&rsquo;s central category</Ref> is a way of writing one
+        interior cell per row.
+      </p>
+      <div className="mt-3">
+        <Aside summary="The ensemble underneath, and where these numbers would come from">
+          <p>
+            What is being averaged is, physically, a Boltzmann-weighted ensemble of conformations:
+            a continuum of states with populations set by their free energies. The joint occupancies
+            here are that ensemble coarse-grained onto whichever handful of alternates the model
+            happens to name — a discrete, deliberately coarse summary of it, and the coarsest one
+            that still says which parts of the molecule move together.
+          </p>
+          <p>
+            Defining, representing, comparing and validating such ensembles — and the gap between
+            what current experiments deliver and what a ground-truth ensemble would need — is the
+            subject of{" "}
+            <a
+              href="https://arxiv.org/abs/2505.01919"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-slate-300 underline-offset-2 hover:text-slate-800"
+            >
+              Wankowicz &amp; Bonomi, <em>From Possibility to Precision in Macromolecular Ensemble
+              Prediction</em> (arXiv:2505.01919)
+            </a>
+            . <Ref to="open">Part IV</Ref> takes up the same question from this format&rsquo;s side:
+            a schema that can hold a joint distribution does not by itself produce one.
+          </p>
+        </Aside>
+      </div>
+    </div>
+  );
+}
 
-// The Part I figure. The occupants are deliberately unnamed: the two-pocket case and its real names
-// arrive in Part IV, and borrowing them here would be nomenclature the reader has not met.
 function ThreeAnswers() {
-  const cases: { tag: string; m: number[][] }[] = [
-    { tag: "independent", m: [[25, 25], [25, 25]] },
-    { tag: "correlated", m: [[50, 0], [0, 50]] },
-    { tag: "anti-correlated", m: [[0, 50], [50, 0]] },
+  const cases: { tag: string; gloss: string; m: number[][] }[] = [
+    {
+      tag: "independent",
+      gloss: "every pairing occurs, in the proportion chance alone gives",
+      m: [[25, 25], [25, 25]],
+    },
+    {
+      tag: "paired one way",
+      gloss: "X is only ever found with P, and Y only ever with Q",
+      m: [[50, 0], [0, 50]],
+    },
+    {
+      tag: "paired the other way",
+      gloss: "X is only ever found with Q, and Y only ever with P",
+      m: [[0, 50], [50, 0]],
+    },
   ];
   return (
-    <div className="my-4 border-y border-slate-100 py-4">
-      <div className="mb-4 text-center text-[12px] text-slate-500">
-        one file · each occupant present in half the copies{" "}
-        <span className="font-mono text-slate-600">X 50 / Y 50 · P 50 / Q 50</span>
+    <div className="mt-4 border-t border-slate-200 pt-4">
+      <div className="mb-4 font-mono text-[10.5px] text-slate-400">
+        rows = top site (X or Y) · columns = bottom site (P or Q) · cells = copies out of 100
       </div>
-      <div className="grid gap-5 sm:grid-cols-3">
+      <div className="grid gap-6 sm:grid-cols-3">
         {cases.map((c) => (
-          <JointMatrix key={c.tag} tag={c.tag} m={c.m} />
+          <JointMatrix key={c.tag} tag={c.tag} gloss={c.gloss} m={c.m} />
         ))}
-      </div>
-      <div className="mt-4 text-center text-[12px] leading-relaxed text-slate-500">
-        Identical edges — what the file records. Different interiors — the physics it cannot.
       </div>
     </div>
   );
 }
 
-function JointMatrix({ tag, m }: { tag: string; m: number[][] }) {
+function JointMatrix({ tag, gloss, m }: { tag: string; gloss: string; m: number[][] }) {
   const rowLabels = ["X", "Y"];
   const colLabels = ["P", "Q"];
   const rowSum = (r: number) => m[r][0] + m[r][1];
   const colSum = (c: number) => m[0][c] + m[1][c];
   const cell = (v: number) => (
     <td
-      className="h-8 w-10 border border-slate-200 text-center font-mono text-[11px] tabular-nums text-slate-700"
+      className="h-8 w-10 border border-slate-300 text-center font-mono text-[11px] tabular-nums text-slate-700"
       style={{ background: `rgba(100,116,139,${(v / 100) * 0.28})` }}
     >
       {v}
     </td>
   );
   const margin = (v: number) => (
-    <td className="h-8 w-8 text-center font-mono text-[10.5px] tabular-nums text-slate-400">{v}</td>
+    <td className="h-8 w-10 text-center font-mono text-[10.5px] tabular-nums text-slate-500">{v}</td>
   );
   return (
     <div>
-      <div className="mb-2 text-[9px] font-semibold uppercase tracking-wider text-slate-400">{tag}</div>
+      <div className="text-[9px] font-semibold uppercase tracking-wider text-slate-500">{tag}</div>
+      <div className="mb-2.5 mt-0.5 h-8 text-[11px] leading-snug text-slate-400">{gloss}</div>
       <table className="border-collapse">
         <thead>
           <tr className="font-mono text-[10px] text-slate-400">
-            <th className="w-12" />
+            <th className="w-10" />
             <th className="font-normal">{colLabels[0]}</th>
             <th className="font-normal">{colLabels[1]}</th>
-            <th className="w-8 font-normal text-slate-300">Σ</th>
+            <th className="w-10 font-normal text-slate-400">occ</th>
           </tr>
         </thead>
         <tbody>
@@ -1401,16 +1400,50 @@ function JointMatrix({ tag, m }: { tag: string; m: number[][] }) {
             </tr>
           ))}
           <tr>
-            <td className="pr-1 text-right font-mono text-[10px] text-slate-300">Σ</td>
+            <td className="pr-1 text-right font-mono text-[10px] text-slate-400">occ</td>
             {margin(colSum(0))}
             {margin(colSum(1))}
             <td />
           </tr>
         </tbody>
       </table>
-      <div className="mt-1.5 text-center font-mono text-[9.5px] text-slate-300">
-        top site X / Y · bottom site P / Q
-      </div>
+    </div>
+  );
+}
+
+// What all three crystals of the interlude write to disk. Not a real file — the point is only that
+// the marginals of the tables above ARE the occupancy column, so the reader can put the abstract
+// figure and the concrete syntax side by side. The two sites both letter their alternates A/B,
+// which is honest: a letter is scoped to its residue and carries no meaning across sites.
+function OccupancyBlock() {
+  const rows: [string, string, string, string][] = [
+    ["top site", "A", "X", "0.50"],
+    ["top site", "B", "Y", "0.50"],
+    ["bottom site", "A", "P", "0.50"],
+    ["bottom site", "B", "Q", "0.50"],
+  ];
+  return (
+    <div className="my-3 overflow-x-auto rounded border border-slate-200 bg-white px-4 py-3">
+      <table className="border-collapse font-mono text-[11px] tabular-nums">
+        <thead>
+          <tr className="text-[10px] text-slate-400">
+            <th className="pr-6 text-left font-normal">atoms of</th>
+            <th className="pr-6 text-left font-normal">_atom_site.label_alt_id</th>
+            <th className="text-left font-normal">_atom_site.occupancy</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([site, letter, occupant, occ]) => (
+            <tr key={`${site}-${letter}`}>
+              <td className="pr-6 text-slate-500">
+                {site} <span className="text-slate-400">({occupant})</span>
+              </td>
+              <td className="pr-6 text-slate-700">{letter}</td>
+              <td className="text-slate-700">{occ}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

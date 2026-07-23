@@ -4,12 +4,12 @@ Parse the pinned PDBx/mmCIF dictionary into structured JSON artifacts.
 Two variants are emitted (both committed, consumed client-side by the Next.js app):
   base  -- the authoritative wwPDB dictionary, untouched
              dictionary.json      graph.json
-  het   -- base + the proposed heterogeneity extension (3 extra categories)
+  het   -- base + the proposed heterogeneity extension (5 extra categories)
              dictionary.het.json  graph.het.json
 
 The app picks a variant at runtime (the dictionary-version dropdown). The "het" build is
 the base dictionary read together with mmcif_pdbx_v50_het_ext.dic, so its FK graph and item
-definitions are derived by the same pipeline -- the extension just adds three categories and
+definitions are derived by the same pipeline -- the extension just adds five categories and
 their pointers into ATOM_SITE / PDBX_ALT_GROUPS.
 
 The output must be byte-reproducible: unchanged inputs have to yield an unchanged file, or
@@ -231,16 +231,27 @@ def build(dic_paths, dict_name, graph_name, variant, label):
     assert items["_atom_site.label_entity_id"].get("parents") == ["_entity.id"]
     assert any(e["source"] == "atom_site" and e["target"] == "entity" for e in edges)
 
-    # --- extension-specific checks: the 3 new categories and their key FK edges ---
+    # --- extension-specific checks: the 5 new categories and their key FK edges ---
     if variant == "het":
-        for c in ("pdbx_alt_groups", "pdbx_heterogeneity_hierarchy", "pdbx_state_coexistence"):
+        for c in ("pdbx_alt_groups", "pdbx_heterogeneity_hierarchy", "pdbx_het_state",
+                  "pdbx_het_state_members", "pdbx_state_coexistence"):
             assert c in categories, f"missing extension category: {c}"
+        for c in ("pdbx_occupancy_relationship", "pdbx_occupancy_relationship_member"):
+            assert c not in categories, f"deleted extension category still present: {c}"
+        for i in ("_pdbx_heterogeneity_hierarchy.parent_alt_groups_id",
+                  "_pdbx_heterogeneity_hierarchy.occupancy_completeness"):
+            assert i not in items, f"deleted hierarchy column still defined: {i}"
         assert items["_pdbx_alt_groups.auth_asym_id"].get("parents") == ["_atom_site.auth_asym_id"], \
             "pdbx_alt_groups.auth_asym_id is not linked to atom_site.auth_asym_id"
         assert any(e["source"] == "pdbx_alt_groups" and e["target"] == "atom_site" for e in edges), \
             "missing edge pdbx_alt_groups -> atom_site"
         assert any(e["source"] == "pdbx_heterogeneity_hierarchy" and e["target"] == "pdbx_alt_groups"
                    for e in edges), "missing edge pdbx_heterogeneity_hierarchy -> pdbx_alt_groups"
+        # the state join: members point at both the state they belong to and the network they name
+        assert any(e["source"] == "pdbx_het_state_members" and e["target"] == "pdbx_het_state"
+                   for e in edges), "missing edge pdbx_het_state_members -> pdbx_het_state"
+        assert any(e["source"] == "pdbx_het_state_members" and e["target"] == "pdbx_alt_groups"
+                   for e in edges), "missing edge pdbx_het_state_members -> pdbx_alt_groups"
 
     print(f"OK  [{variant}] dict v{meta['version']}  sha {meta['source_sha256'][:12]}")
     print(f"    categories={meta['num_categories']}  items={meta['num_items']}  "

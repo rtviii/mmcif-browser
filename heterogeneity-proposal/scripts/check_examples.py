@@ -259,7 +259,7 @@ ok("5E1N_gln8_split: the H's occupancies differ from the side chain's -> two IND
 ok("5E1N_gln8_split: both nonetheless carry label_alt_id = A -> a residue+letter key cannot separate them",
    "A" in occ_h and "A" in occ_s)
 
-print("\n7HHS_apo_bound -- the occupancy arithmetic")
+print("\n7HHS_apo_bound -- three states in deposited numbers")
 no_clashes("7HHS_apo_bound.cif")
 N = load("7HHS_apo_bound.cif")
 pocket = {a["alt"]: a["occ"] for a in N if a["comp"] not in ("A1A7O",) and a["alt"] not in ".?"}
@@ -269,7 +269,7 @@ ok("7HHS_apo_bound: pocket apo = 0.78, bound = 0.22", pocket.get("A") == 0.78 an
    str(pocket))
 ok("7HHS_apo_bound: pose_1 = 0.13", p1 == {0.13}, str(p1))
 ok("7HHS_apo_bound: pose_2 = 0.09", p2 == {0.09}, str(p2))
-ok("7HHS_apo_bound: 0.13 + 0.09 == 0.22 == occupancy(bound)  <-- the nesting rule, in deposited numbers",
+ok("7HHS_apo_bound: 0.13 + 0.09 == 0.22 == occupancy(bound)  <-- arithmetic on the state table",
    abs(0.13 + 0.09 - pocket.get("B", 0)) < 1e-9)
 L1 = [a for a in N if a["seq"] == 201]
 L2 = [a for a in N if a["seq"] == 202]
@@ -297,7 +297,7 @@ for other in ("C", "D"):
     ok(f"5E1N_arg74_clash: Arg74 alternate {other} does NOT clash -> the exclusion is specific to B",
        far >= 2.4, f"{far:.2f} A")
 
-print("\nconstructed_two_pocket -- the nesting the occupancies actually call for")
+print("\nconstructed_two_pocket -- the joint the marginals cannot decide")
 no_clashes("constructed_two_pocket.cif")
 peptide_bonds("constructed_two_pocket.cif")
 D_ = load("constructed_two_pocket.cif")
@@ -315,89 +315,83 @@ ok("constructed_two_pocket: the ligand ring is all-carbon (a real phenol, not N+
    all(a["el"] == "C" for a in ring), f"{len(ring)} ring atoms")
 occ_top = {a["alt"]: a["occ"] for a in D_ if a["seq"] == 501}
 occ_bot = {a["alt"]: a["occ"] for a in D_ if a["seq"] == 502}
-ok("constructed_two_pocket: top pocket sums to 1.0 (complete under base)",
+ok("constructed_two_pocket: top pocket sums to 1.0 -- one of the two is always there",
    abs(sum(occ_top.values()) - 1.0) < 1e-9, str(occ_top))
-ok("constructed_two_pocket: O(EDO2) + O(EDO3) == O(EDO1)  <-- which is what licenses the parent link",
-   abs(occ_top.get("B", 0) - (occ_bot.get("C", 0) + occ_bot.get("D", 0))) < 1e-9,
-   f"{occ_bot.get('C')} + {occ_bot.get('D')} = {occ_top.get('B')}")
+ok("constructed_two_pocket: bottom pocket sums to 0.50 -- it is empty in half the copies",
+   abs(sum(occ_bot.values()) - 0.50) < 1e-9, str(occ_bot))
 
-# The encoding claims. The arithmetic above says the bottom pocket is ordered only within the
-# EDO1 population, which is a nesting -- so the parent link carries it and no escape hatch is
-# needed. This is the same shape as pose_1/pose_2 under `bound` in 7HHS.
-H = {r["alt_group_id"]: r
-     for r in load_loop("constructed_two_pocket.cif", "_pdbx_heterogeneity_hierarchy.")}
-ok("constructed_two_pocket: EDO2/EDO3 are parented to EDO1, not to base",
-   H["EDO2"]["parent_alt_groups_id"] == "EDO1" and H["EDO3"]["parent_alt_groups_id"] == "EDO1",
-   f"EDO2 -> {H['EDO2']['parent_alt_groups_id']}, EDO3 -> {H['EDO3']['parent_alt_groups_id']}")
-ok("constructed_two_pocket: so the bottom group is complete (it sums to its parent, not to 1)",
-   H["EDO2"]["occupancy_completeness"] == "complete" == H["EDO3"]["occupancy_completeness"],
-   H["EDO2"]["occupancy_completeness"])
-ok("constructed_two_pocket: the tree carries the coupling, so NO occupancy relationship is written",
-   not load_loop("constructed_two_pocket.cif", "_pdbx_occupancy_relationship."),
-   "no _pdbx_occupancy_relationship loop")
+# The point of the file: the states are NOT the product of the marginals. If they were, the state
+# table would be derivable and there would be no reason to write it down.
+S = {r["id"]: r for r in load_loop("constructed_two_pocket.cif", "_pdbx_het_state.")}
+M = load_loop("constructed_two_pocket.cif", "_pdbx_het_state_members.")
+nets_of = {}
+for r in M:
+    nets_of.setdefault(r["state_id"], set()).add(r["alt_group_id"])
+ok("constructed_two_pocket: six states, all in one bundle",
+   len(S) == 6 and len({r["bundle_id"] for r in S.values()}) == 1,
+   f"{len(S)} states, bundles {sorted({r['bundle_id'] for r in S.values()})}")
+joint = {frozenset(nets_of.get(sid, set())): float(r["occupancy"]) for sid, r in S.items()}
+ok("constructed_two_pocket: the majority species is EDO1 + EDO2 at 0.25",
+   abs(joint.get(frozenset({"EDO1", "EDO2"}), 0) - 0.25) < 1e-9,
+   str(joint.get(frozenset({"EDO1", "EDO2"}))))
+indep = 0.50 * 0.30
+ok("constructed_two_pocket: which is NOT the product of its marginals -> the joint is real information",
+   abs(joint.get(frozenset({"EDO1", "EDO2"}), 0) - indep) > 0.05,
+   f"stated 0.25 vs independent {indep:.2f}")
+ok("constructed_two_pocket: two states name only a top-pocket occupant -- the empty bottom pocket, by omission",
+   sum(1 for k in joint if len(k) == 1) == 2,
+   str(sorted(tuple(sorted(k)) for k in joint if len(k) == 1)))
+ok("constructed_two_pocket: no forbidden row -- a bundle already forbids by omission what it does not list",
+   not load_loop("constructed_two_pocket.cif", "_pdbx_state_coexistence."),
+   "no _pdbx_state_coexistence loop")
 
-print("\nconstructed_two_pocket_flat -- the worked negative: same atoms, wrong parent")
-F = load("constructed_two_pocket_flat.cif")
-key = lambda A: [(a["ch"], a["seq"], a["atom"], a["alt"], a["x"], a["y"], a["z"], a["occ"]) for a in A]
-ok("constructed_two_pocket_flat: coordinates and occupancies IDENTICAL to the nested file",
-   key(F) == key(D_), f"{len(F)} atoms, only the hierarchy differs")
-HF = {r["alt_group_id"]: r
-      for r in load_loop("constructed_two_pocket_flat.cif", "_pdbx_heterogeneity_hierarchy.")}
-ok("constructed_two_pocket_flat: EDO2/EDO3 hang off base -> the tree reads the pockets as independent",
-   HF["EDO2"]["parent_alt_groups_id"] == "base" and HF["EDO3"]["parent_alt_groups_id"] == "base",
-   f"EDO2 -> {HF['EDO2']['parent_alt_groups_id']}")
-ok("constructed_two_pocket_flat: and must then call the bottom group incomplete, against a parent of 1.0",
-   HF["EDO2"]["occupancy_completeness"] == "incomplete", HF["EDO2"]["occupancy_completeness"])
-ok("constructed_two_pocket_flat: exactly one column differs from the nested file (the parent)",
-   [r["parent_alt_groups_id"] for r in load_loop("constructed_two_pocket_flat.cif", "_pdbx_heterogeneity_hierarchy.")]
-   != [r["parent_alt_groups_id"] for r in load_loop("constructed_two_pocket.cif", "_pdbx_heterogeneity_hierarchy.")]
-   and [r["coexistence_group_id"] for r in load_loop("constructed_two_pocket_flat.cif", "_pdbx_heterogeneity_hierarchy.")]
-   == [r["coexistence_group_id"] for r in load_loop("constructed_two_pocket.cif", "_pdbx_heterogeneity_hierarchy.")])
+print("\n5E1N_arg74_clash -- one forbidden pairing, and no bundle")
+ok("5E1N_arg74_clash: exactly one NOT row, naming arg74_B and wat468_E",
+   [(r["rule"], r["alt_group_id"], r["alt_group_ids"])
+    for r in load_loop("5E1N_arg74_clash.cif", "_pdbx_state_coexistence.")]
+   == [("NOT", "arg74_B", "wat468_E")])
+ok("5E1N_arg74_clash: and NO state table -- no joint populations are known here",
+   not load_loop("5E1N_arg74_clash.cif", "_pdbx_het_state."), "no _pdbx_het_state loop")
 
-print("\nconstructed_ncs_lock -- the cross-branch lock no parent link can imply")
-no_clashes("constructed_ncs_lock.cif")
-peptide_bonds("constructed_ncs_lock.cif")
-K = load("constructed_ncs_lock.cif")
-ka = [a for a in K if a["ch"] == "A"]
-kb = [a for a in K if a["ch"] == "B"]
-ok("constructed_ncs_lock: two copies, same atom count", len(ka) == len(kb) and len(ka) > 0,
-   f"A={len(ka)}, B={len(kb)}")
-worst = max(abs(d(ka[i], ka[j]) - d(kb[i], kb[j]))
-            for i in range(len(ka)) for j in range(i + 1, len(ka)))
-ok("constructed_ncs_lock: chain B is a RIGID copy of chain A -> a proper NCS operator",
-   worst < 1e-2, f"largest internal-distance deviation {worst:.4f} A")
-sep = min(d(a, b) for a in ka for b in kb)
-ok("constructed_ncs_lock: the two copies do not clash", sep >= 3.0, f"closest approach {sep:.2f} A")
-e_a = [a for a in ka if a["comp"] == "EDO"]
-e_b = [a for a in kb if a["comp"] == "EDO"]
-ok("constructed_ncs_lock: one glycol per copy", len(e_a) == 4 and len(e_b) == 4,
-   f"A={len(e_a)}, B={len(e_b)}")
-oa, ob = {a["occ"] for a in e_a}, {a["occ"] for a in e_b}
-ok("constructed_ncs_lock: both glycols carry the SAME partial occupancy -- the trace the restraint leaves",
-   oa == ob and len(oa) == 1 and next(iter(oa)) < 1.0, f"A={oa}, B={ob}")
+# ------------------------------------------------------------------ every state table, checked
+# The two halves of an annotated file have to agree: a bundle is exhaustive (its states sum to 1)
+# and it is consistent with the coordinates (a network's marginal is the sum of the states
+# containing it). Neither is enforced by the dictionary, and both are what the page asserts.
+print("\nevery state table vs _atom_site")
+for name in sorted(os.listdir(EX)):
+    if not name.endswith(".cif"):
+        continue
+    states = load_loop(name, "_pdbx_het_state.")
+    if not states:
+        continue
+    members = load_loop(name, "_pdbx_het_state_members.")
+    groups = load_loop(name, "_pdbx_alt_groups.")
+    atoms = load(name)
+    nets_of = {}
+    for r in members:
+        nets_of.setdefault(r["state_id"], set()).add(r["alt_group_id"])
 
-HK = {r["alt_group_id"]: r
-      for r in load_loop("constructed_ncs_lock.cif", "_pdbx_heterogeneity_hierarchy.")}
-ok("constructed_ncs_lock: neither site is the other's parent -> no parent link can tie them",
-   HK["edo_A"]["parent_alt_groups_id"] == "base" and HK["edo_B"]["parent_alt_groups_id"] == "base",
-   f"edo_A -> {HK['edo_A']['parent_alt_groups_id']}, edo_B -> {HK['edo_B']['parent_alt_groups_id']}")
-ok("constructed_ncs_lock: they sit in DIFFERENT coexistence groups -> no sibling rule relates them",
-   HK["edo_A"]["coexistence_group_id"] != HK["edo_B"]["coexistence_group_id"],
-   f"{HK['edo_A']['coexistence_group_id']} vs {HK['edo_B']['coexistence_group_id']}")
-ok("constructed_ncs_lock: each is a lone partial network -> completeness 'single', no sum rule",
-   HK["edo_A"]["occupancy_completeness"] == "single" == HK["edo_B"]["occupancy_completeness"],
-   HK["edo_A"]["occupancy_completeness"])
-REL = load_loop("constructed_ncs_lock.cif", "_pdbx_occupancy_relationship.")
-MEM = load_loop("constructed_ncs_lock.cif", "_pdbx_occupancy_relationship_member.")
-ok("constructed_ncs_lock: exactly one relationship row, of type 'equal'",
-   len(REL) == 1 and REL[0]["type"] == "equal", str([r.get("type") for r in REL]))
-ok("constructed_ncs_lock: 'equal' carries exactly one member (the other side is the target)",
-   len(MEM) == 1, f"{len(MEM)} member row(s)")
-ok("constructed_ncs_lock: the tie names the two glycols -> O(edo_B) = O(edo_A)",
-   {MEM[0]["state_id"], REL[0]["target"]} == {"edo_A", "edo_B"},
-   f"member {MEM[0]['state_id']}, target {REL[0]['target']}")
-ok("constructed_ncs_lock: honest about provenance -> enforced = annotation (no program fits it)",
-   REL[0]["enforced"] == "annotation", REL[0]["enforced"])
+    bundles = {}
+    for r in states:
+        bundles[r["bundle_id"]] = bundles.get(r["bundle_id"], 0.0) + float(r["occupancy"])
+    for b, total in bundles.items():
+        ok(f"{name}: bundle {b} is exhaustive (its states sum to 1.00)", abs(total - 1.0) < 5e-3,
+           f"{total:.3f}")
+
+    # a network's marginal, off atom_site: the occupancy of any atom its selectors claim
+    marginal = {}
+    for g in groups:
+        for a in atoms:
+            if (a["ch"] == g["auth_asym_id"]
+                    and int(g["auth_seq_id_start"]) <= a["seq"] <= int(g["auth_seq_id_end"])
+                    and a["alt"] == g["label_alt_id"]
+                    and (g["label_atom_id"] in (".", "?") or a["atom"] == g["label_atom_id"])):
+                marginal[g["alt_group_id"]] = a["occ"]
+                break
+    for net, occ in sorted(marginal.items()):
+        summed = sum(float(r["occupancy"]) for r in states if net in nets_of.get(r["id"], set()))
+        ok(f"{name}: {net} marginal {occ:.2f} == sum of the states containing it",
+           abs(summed - occ) < 5e-3, f"states sum to {summed:.3f}")
 
 print(f"\n{CHECKED - len(FAILED)}/{CHECKED} claims hold")
 if FAILED:
