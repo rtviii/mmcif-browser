@@ -132,6 +132,33 @@ export const buildBondQuery = (
   });
 };
 
+// Exactly the two ATOMS a struct_conn row names — not their whole residues, which is the
+// difference that matters for an alternate-specific bond: Thr26's carbonyl oxygen reaches the ion
+// four times, once per letter, and highlighting the residue would light all four at once.
+export interface BondEnd {
+  chain: string;
+  seq: number;
+  atomId: string;
+  altId: string | null;
+}
+
+export const buildBondAtomsExpression = (a: BondEnd, b: BondEnd) => {
+  const end = (e: BondEnd) => {
+    const tests = [
+      MS.core.rel.eq([MS.ammp("auth_asym_id"), e.chain]),
+      MS.core.rel.eq([MS.ammp("auth_seq_id"), e.seq]),
+      MS.core.rel.eq([MS.ammp("label_atom_id"), e.atomId]),
+    ];
+    // No letter on the row means "whichever copy of this atom exists" — a single-conformer
+    // partner, like the ion itself.
+    if (e.altId) tests.push(MS.core.rel.eq([MS.ammp("label_alt_id"), e.altId]));
+    return MS.core.logic.and(tests);
+  };
+  return MS.struct.generator.atomGroups({
+    "atom-test": MS.core.logic.or([end(a), end(b)]),
+  });
+};
+
 export const buildSurroundingsQuery = (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   baseQuery: any,

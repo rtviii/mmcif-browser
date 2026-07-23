@@ -3,6 +3,10 @@ data_7HHS_apo_bound
 # Fragment-screening entry PDB 7HHS: the ligand pocket -- residues 21-25 and 47-49 of chain A
 # plus both modelled poses of ligand A1A7O. Deposited coordinates, copied verbatim; H omitted.
 #
+# The three states below are the deposited occupancies read as a joint distribution: the pocket
+# is apo in 78% of copies, and in the remaining 22% it is bound, with one pose or the other.
+# 0.13 + 0.09 = 0.22 is then arithmetic on the state table rather than a claim made elsewhere.
+#
 loop_
 _atom_site.group_PDB
 _atom_site.id
@@ -178,6 +182,7 @@ HETATM 150 O O1  C A1A7O D 2 .  ? -43.532 -32.276 3.043  0.09 15.00 ?  202 A1A7O
 #
 # proposed heterogeneity extension -- the categories below are NOT part of the
 # current PDBx/mmCIF dictionary; they are what this page proposes to add.
+# which pose accompanies the bound pocket, and how often, has no representation here -- _atom_site carries only the four marginals
 loop_
 _pdbx_alt_groups.id
 _pdbx_alt_groups.alt_group_id
@@ -196,10 +201,28 @@ _pdbx_alt_groups.label_atom_id
 loop_
 _pdbx_heterogeneity_hierarchy.alt_group_id
 _pdbx_heterogeneity_hierarchy.coexistence_group_id
-_pdbx_heterogeneity_hierarchy.parent_alt_groups_id
-base   .           .
-apo    pocket      base
-bound  pocket      base
-pose_1 ligand_pose bound
-pose_2 ligand_pose bound
+_pdbx_heterogeneity_hierarchy.state_kind
+apo    pocket      compositional
+bound  pocket      compositional
+pose_1 ligand_pose conformational
+pose_2 ligand_pose conformational
+#
+loop_
+_pdbx_het_state.id
+_pdbx_het_state.bundle_id
+_pdbx_het_state.occupancy
+_pdbx_het_state.provenance
+_pdbx_het_state.details
+1 ligand_site 0.78 fit 'apo -- the ligand is absent, and this state has no ligand atoms at all'
+2 ligand_site 0.13 fit 'bound, ligand in pose_1'
+3 ligand_site 0.09 fit 'bound, ligand in pose_2'
+#
+loop_
+_pdbx_het_state_members.state_id
+_pdbx_het_state_members.alt_group_id
+1 apo
+2 bound
+2 pose_1
+3 bound
+3 pose_2
 #

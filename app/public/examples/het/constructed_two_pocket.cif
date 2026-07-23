@@ -4,6 +4,12 @@ data_constructed_two_pocket
 # occupants are built to their correct internal geometry (ethylene glycol C-C 1.512 A /
 # C-O 1.423 A; a planar phenol ring) and placed so that nothing clashes.
 #
+# The top pocket (residue 501) holds the phenol ligand or EDO1, at 0.50 each; the bottom pocket
+# (residue 502) holds EDO2 at 0.30, EDO3 at 0.20, or nothing. Those four numbers are the
+# marginals, and they are all _atom_site can hold. The six states below are the joint: what the
+# bottom pocket does depends on what sits above it, and the majority species is EDO1 + EDO2 at
+# 0.25 -- which is nowhere near the 0.15 that independence would predict.
+#
 #
 loop_
 _atom_site.group_PDB
@@ -70,7 +76,7 @@ HETATM 40 O O2  D EDO E 3 .  ? 0.858  0.932  -1.306 0.20 32.00 ? 502 EDO A O2  1
 #
 # proposed heterogeneity extension -- the categories below are NOT part of the
 # current PDBx/mmCIF dictionary; they are what this page proposes to add.
-# the bottom pocket is ordered only within the EDO1 population, so EDO1 is its parent and the group is complete
+# which bottom-pocket occupant accompanies which top-pocket occupant, and in what proportion, has no representation here -- the four marginals above are consistent with infinitely many different pairings
 loop_
 _pdbx_alt_groups.id
 _pdbx_alt_groups.alt_group_id
@@ -87,14 +93,36 @@ _pdbx_alt_groups.label_atom_id
 loop_
 _pdbx_heterogeneity_hierarchy.alt_group_id
 _pdbx_heterogeneity_hierarchy.coexistence_group_id
-_pdbx_heterogeneity_hierarchy.parent_alt_groups_id
-_pdbx_heterogeneity_hierarchy.occupancy_completeness
-_pdbx_heterogeneity_hierarchy.occupancy_refine_flag
-_pdbx_heterogeneity_hierarchy.occupancy_value
 _pdbx_heterogeneity_hierarchy.state_kind
-base   .          .    .        .       1.0 .
-Ligand top_pocket base complete refined .   compositional
-EDO1   top_pocket base complete refined .   compositional
-EDO2   bot_pocket EDO1 complete refined .   compositional
-EDO3   bot_pocket EDO1 complete refined .   compositional
+Ligand top_pocket compositional
+EDO1   top_pocket compositional
+EDO2   bot_pocket compositional
+EDO3   bot_pocket compositional
+#
+loop_
+_pdbx_het_state.id
+_pdbx_het_state.bundle_id
+_pdbx_het_state.occupancy
+_pdbx_het_state.provenance
+_pdbx_het_state.details
+1 edo_site 0.05 assert 'Ligand + EDO2 -- rare, the phenol ring crowds the lower pocket'
+2 edo_site 0.15 assert 'Ligand + EDO3'
+3 edo_site 0.30 assert 'Ligand, lower pocket empty'
+4 edo_site 0.25 assert 'EDO1 + EDO2 -- the majority species'
+5 edo_site 0.05 assert 'EDO1 + EDO3'
+6 edo_site 0.20 assert 'EDO1, lower pocket empty'
+#
+loop_
+_pdbx_het_state_members.state_id
+_pdbx_het_state_members.alt_group_id
+1 Ligand
+1 EDO2
+2 Ligand
+2 EDO3
+3 Ligand
+4 EDO1
+4 EDO2
+5 EDO1
+5 EDO3
+6 EDO1
 #

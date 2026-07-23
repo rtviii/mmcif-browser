@@ -5,8 +5,14 @@ import { parseCif } from "@/lib/cif";
 import { segmentDocument, type CifDocument } from "@/lib/cif-source/segment";
 import { buildLineToRowFull } from "@/lib/cif-source/table";
 import { asMolCifFile, type MolCifFile } from "@/lib/cif-source/types";
-import { parseHeterogeneity, HET_PALETTE_MUTED, type HetModel } from "@/lib/molstar/het";
-import { buildNetworkLineIndex, HET_ID_FIELDS, type NetworkLines } from "@/lib/molstar/het-lines";
+import { parseHeterogeneity, HET_PALETTE_MUTED, type HetBond, type HetModel } from "@/lib/molstar/het";
+import {
+  buildBondLineIndex,
+  buildNetworkLineIndex,
+  HET_ID_FIELDS,
+  type BondLines,
+  type NetworkLines,
+} from "@/lib/molstar/het-lines";
 import {
   buildAltGroupExpression,
   buildAtomQuery,
@@ -94,6 +100,7 @@ export function StageFigure({
   const [activeNet, setActiveNet] = useState<string | null>(null);
   const [activeState, setActiveState] = useState(-1);
   const [activeAlt, setActiveAlt] = useState<string | null>(null);
+  const [activeBond, setActiveBond] = useState<string | null>(null);
   const [hoverLines, setHoverLines] = useState<ReadonlySet<number> | null>(null);
   const [flashLines, setFlashLines] = useState<ReadonlySet<number> | null>(null);
 
@@ -186,6 +193,12 @@ export function StageFigure({
   // network id -> the source lines that are about it (see lib/molstar/het-lines.ts)
   const netLines = useMemo<Map<string, NetworkLines> | null>(
     () => (doc && molFile && model ? buildNetworkLineIndex(doc, molFile, model) : null),
+    [doc, molFile, model],
+  );
+
+  // bond id -> the lines of its _struct_conn row
+  const bondLines = useMemo<BondLines | null>(
+    () => (doc && molFile && model ? buildBondLineIndex(doc, molFile, model) : null),
     [doc, molFile, model],
   );
 
@@ -297,8 +310,16 @@ export function StageFigure({
       for (const ln of lines.meta) put(ln, color, "row");
       for (const ln of lines.atoms) put(ln, color, "rail");
     }
+    // A selected bond promotes its own _struct_conn row, in the colour of the network that owns it.
+    // Selecting a network already promotes its bond rows through netLines.meta above — this is the
+    // other direction, so a bond can be picked out of a run of otherwise identical-looking rows.
+    if (activeBond && bondLines) {
+      const bond = model.bonds.find((b) => b.id === activeBond);
+      const color = (bond?.networks.length && colorOf.get(bond.networks[0])) || "#64748b";
+      for (const ln of bondLines.get(activeBond) ?? []) put(ln, color, "row");
+    }
     return m;
-  }, [netLines, model, colorOf, activeNet, activeState, altLocs, colorOfAlt, activeAlt]);
+  }, [netLines, bondLines, model, colorOf, activeNet, activeState, activeBond, altLocs, colorOfAlt, activeAlt]);
 
   // The editor motion: mark, scroll the panel to the anchor, flash briefly.
   const snapTo = useCallback((lines: number[], anchor: number) => {
@@ -353,6 +374,37 @@ export function StageFigure({
       setHoverLines(new Set([...lines.meta, ...lines.atoms]));
     },
     [viewer, netLines],
+  );
+
+  // A bond behaves like a network chip, one level finer: hover highlights its two atoms in 3D and
+  // its row in the source; click focuses the pair and snaps the panel to the row that declares it.
+  const bondEnds = (b: HetBond) => ({
+    a: { chain: b.a.chain, seq: b.a.seq, atomId: b.a.atomId, altId: b.a.altId },
+    b: { chain: b.b.chain, seq: b.b.seq, atomId: b.b.atomId, altId: b.b.altId },
+  });
+
+  const pickBond = useCallback(
+    (id: string) => {
+      const next = activeBond === id ? null : id; // click again to release
+      setActiveBond(next);
+      if (!next) return;
+      const bond = model?.bonds.find((b) => b.id === id);
+      if (!bond) return;
+      const ends = bondEnds(bond);
+      viewer?.focusBond(ends.a, ends.b);
+      const lines = bondLines?.get(id);
+      if (lines?.length) snapTo(lines, lines[0]);
+    },
+    [activeBond, model, bondLines, viewer, snapTo],
+  );
+
+  const hoverBond = useCallback(
+    (id: string | null) => {
+      const bond = id ? model?.bonds.find((b) => b.id === id) : null;
+      viewer?.highlightBond(bond ? bondEnds(bond) : null);
+      setHoverLines(bond ? new Set(bondLines?.get(bond.id) ?? []) : null);
+    },
+    [model, bondLines, viewer],
   );
 
   const altLociOf = useCallback(
@@ -535,9 +587,12 @@ export function StageFigure({
         colorOf={colorOf}
         activeNet={activeNet}
         activeState={activeState}
+        activeBond={activeBond}
         onPickNetwork={pickNetwork}
         onPickState={pickState}
         onHoverNetwork={hoverNetwork}
+        onPickBond={pickBond}
+        onHoverBond={hoverBond}
       />
     ) : altLocs.length > 0 ? (
       <AltLocControls
@@ -660,6 +715,13 @@ function chip(active: boolean) {
 // One labelled track. The fixed-width label column is what makes the rows read as a toolbar rather
 // than a wrapped pile: every chip starts at the same x. The chips wrap — the strip has the width of
 // the whole figure now, so nothing needs to be clipped.
+// "bundle edo_site" when the file's states all sit in one bundle, the list when they do not. The
+// bundle is the unit of correlation, so naming it says how far the enumeration reaches.
+function stateNote(model: HetModel): string {
+  const bundles = [...new Set(model.states.map((s) => s.bundleId).filter(Boolean))];
+  return bundles.length ? `bundle ${bundles.join(" · ")}` : "joint, from the file";
+}
+
 function ChipRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-2 border-b border-slate-100 px-2 py-1.5 last:border-0">
@@ -718,18 +780,30 @@ function HetControls({
   colorOf,
   activeNet,
   activeState,
+  activeBond,
   onPickNetwork,
   onPickState,
   onHoverNetwork,
+  onPickBond,
+  onHoverBond,
 }: {
   model: HetModel;
   colorOf: Map<string, string>;
   activeNet: string | null;
   activeState: number;
+  activeBond: string | null;
   onPickNetwork: (id: string) => void;
   onPickState: (idx: number) => void;
   onHoverNetwork: (id: string | null) => void;
+  onPickBond: (id: string) => void;
+  onHoverBond: (id: string | null) => void;
 }) {
+  // Which networks are on screen right now, so a bond belonging to a hidden one can be shown as
+  // such rather than silently pointing at atoms that are no longer drawn.
+  const visible =
+    activeState >= 0
+      ? new Set(model.states[activeState]?.networks ?? [])
+      : new Set(model.networks.map((n) => n.id));
   return (
     <div className="rounded border border-slate-200 bg-white text-[11px]">
       <ChipRow label="networks">
@@ -755,6 +829,9 @@ function HetControls({
         ))}
       </ChipRow>
 
+      {/* The percentage on a chip is a JOINT occupancy when the file states one, and a product of
+          marginals when it does not — the same-looking number meaning two very different things,
+          which is the whole argument of the states section. The trailing note says which. */}
       <ChipRow label="states">
         <button className={chip(activeState === -1 && !activeNet)} onClick={() => onPickState(-1)}>
           all
@@ -764,7 +841,7 @@ function HetControls({
             key={s.id}
             className={chip(activeState === i)}
             aria-pressed={activeState === i}
-            title={s.label}
+            title={s.details ?? s.label}
             onClick={() => onPickState(i)}
           >
             {s.networks.length ? s.networks.join(" + ") : "base"}
@@ -775,7 +852,55 @@ function HetControls({
             )}
           </button>
         ))}
+        <span
+          className="shrink-0 self-center text-[10px] italic text-slate-400"
+          title={
+            model.stateSource === "stated"
+              ? "these occupancies are read from _pdbx_het_state — each is the joint occupancy of the whole combination"
+              : "this file states no joint distribution, so these are every combination the coexistence groups allow, weighted as if the groups were independent"
+          }
+        >
+          {model.stateSource === "stated" ? stateNote(model) : "assuming independence"}
+        </span>
       </ChipRow>
+
+      {/* struct_conn. A bond that names an altloc belongs to one alternate and not to the others,
+          which is the claim the calcium site is making — so each is its own chip, coloured by the
+          network that owns it, and dimmed when that network is not in the state on screen. */}
+      {model.bonds.length > 0 && (
+        <ChipRow label="bonds">
+          {model.bonds.map((b) => {
+            const owner = b.networks[0];
+            const shown = !owner || visible.has(owner);
+            return (
+              <button
+                key={b.id}
+                className={`${chip(activeBond === b.id)} ${shown ? "" : "opacity-40"}`}
+                aria-pressed={activeBond === b.id}
+                title={`${b.type} · ${b.a.comp} ${b.a.seq} ${b.a.atomId}${b.a.altId ? "/" + b.a.altId : ""} — ${b.b.comp} ${b.b.seq} ${b.b.atomId}${b.b.altId ? "/" + b.b.altId : ""}${b.distance != null ? ` · ${b.distance.toFixed(2)} Å` : ""}${owner ? ` · belongs to ${b.networks.join(", ")}` : " · single-conformer on both ends"}`}
+                onClick={() => onPickBond(b.id)}
+                onMouseEnter={() => onHoverBond(b.id)}
+                onMouseLeave={() => onHoverBond(null)}
+              >
+                {owner && (
+                  <span
+                    className="inline-block h-2 w-2 shrink-0 rounded-[2px]"
+                    style={{ background: colorOf.get(owner) }}
+                  />
+                )}
+                <span>
+                  {b.a.atomId}–{b.b.comp}
+                  {b.b.seq}.{b.b.atomId}
+                  {b.b.altId && <span className="text-slate-400">/{b.b.altId}</span>}
+                </span>
+                {b.distance != null && (
+                  <span className="tabular-nums text-slate-400">{b.distance.toFixed(2)}Å</span>
+                )}
+              </button>
+            );
+          })}
+        </ChipRow>
+      )}
 
       {model.exclusions.length > 0 && (
         <ChipRow label="excludes">

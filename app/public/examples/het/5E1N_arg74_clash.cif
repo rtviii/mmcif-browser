@@ -3,6 +3,11 @@ data_5E1N_arg74_clash
 # Calmodulin (PDB 5E1N), Arg74 and its neighbours, plus water 468.
 # Deposited coordinates, copied verbatim; hydrogens omitted.
 #
+# Arg74 alternate B lands 2.14 A from the water -- a clash, not a hydrogen bond. Alternates C
+# and D clear it at 3.97 and 4.80 A. There is no bundle here: nothing says the water's presence
+# is correlated with C rather than D, and no joint populations are known. One forbidden pairing
+# is the whole of what this file adds.
+#
 #
 loop_
 _atom_site.group_PDB
@@ -88,6 +93,7 @@ HETATM 59 O O   E HOH I 4 .  ? 42.490 4.462  -13.984 0.35 19.92 ? 469 HOH A O   
 #
 # proposed heterogeneity extension -- the categories below are NOT part of the
 # current PDBx/mmCIF dictionary; they are what this page proposes to add.
+# that one rotamer and the water cannot both be present has no representation here -- they are not alternatives of each other
 loop_
 _pdbx_alt_groups.id
 _pdbx_alt_groups.alt_group_id
@@ -104,21 +110,16 @@ _pdbx_alt_groups.label_atom_id
 loop_
 _pdbx_heterogeneity_hierarchy.alt_group_id
 _pdbx_heterogeneity_hierarchy.coexistence_group_id
-_pdbx_heterogeneity_hierarchy.parent_alt_groups_id
-_pdbx_heterogeneity_hierarchy.occupancy_completeness
-_pdbx_heterogeneity_hierarchy.occupancy_refine_flag
-_pdbx_heterogeneity_hierarchy.occupancy_value
 _pdbx_heterogeneity_hierarchy.state_kind
-base     .        .    .          .       1.0 .
-arg74_B  arg74    base complete   refined .   conformational
-arg74_C  arg74    base complete   refined .   conformational
-arg74_D  arg74    base complete   refined .   conformational
-wat468_E water468 base incomplete refined .   compositional
+arg74_B  arg74    conformational
+arg74_C  arg74    conformational
+arg74_D  arg74    conformational
+wat468_E water468 compositional
 #
 loop_
 _pdbx_state_coexistence.id
 _pdbx_state_coexistence.rule
-_pdbx_state_coexistence.heterogeneity_id
-_pdbx_state_coexistence.heterogeneity_ids
+_pdbx_state_coexistence.alt_group_id
+_pdbx_state_coexistence.alt_group_ids
 1 NOT arg74_B wat468_E
 #

@@ -129,11 +129,9 @@ _pdbx_alt_groups.label_atom_id
 loop_
 _pdbx_heterogeneity_hierarchy.alt_group_id
 _pdbx_heterogeneity_hierarchy.coexistence_group_id
-_pdbx_heterogeneity_hierarchy.parent_alt_groups_id
-base .            .
-bb_A backbone_6_7 base
-bb_B backbone_6_7 base
-bb_C backbone_6_7 base
-sc_A sidechain_8  base
-sc_B sidechain_8  base
+bb_A backbone_6_7
+bb_B backbone_6_7
+bb_C backbone_6_7
+sc_A sidechain_8
+sc_B sidechain_8
 #

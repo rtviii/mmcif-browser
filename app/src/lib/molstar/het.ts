@@ -1,12 +1,14 @@
 import { asMolCifFile } from "@/lib/cif-source/types";
 
-// Heterogeneity networks parsed from the proposed extension categories (see the reconciliation
-// memo and pipeline/data/mmcif_pdbx_v50_het_ext.dic):
-//   _pdbx_alt_groups            -- membership: which atom_site rows make up each named network
-//   _pdbx_heterogeneity_hierarchy -- the tree + occupancy (coexistence) grouping
-//   _pdbx_state_coexistence     -- optional NOT exclusions between networks
+// Heterogeneity networks parsed from the proposed extension categories (see
+// pipeline/data/mmcif_pdbx_v50_het_ext.dic):
+//   _pdbx_alt_groups              -- membership: which atom_site rows make up each named network
+//   _pdbx_heterogeneity_hierarchy -- which networks exclude one another (coexistence groups)
+//   _pdbx_het_state               -- the joint: combinations that occur, with their occupancies
+//   _pdbx_het_state_members       -- which networks make up each state
+//   _pdbx_state_coexistence       -- optional NOT exclusions between networks
 // Mol* does not know these categories, so (like the TLS path) we parse them off the raw CifFile and
-// build our own model: the networks, their hierarchy, and the enumerated legal whole-molecule states.
+// build our own model: the networks, their exclusions, and the whole-molecule states.
 // ATOM_SITE is untouched; every membership row points back into it by existing keys.
 
 // One membership row of a network: selects atom_site rows by chain + residue range + altloc,
@@ -20,33 +22,67 @@ export interface AltSelector {
 }
 
 export interface HetNetwork {
-  id: string; // alt_group_id (the state name)
+  id: string; // alt_group_id (the network name)
   members: AltSelector[]; // one per _pdbx_alt_groups row
   coexistenceGroupId: string | null; // the mutually-exclusive (occupancy) group it shares with siblings
-  parentId: string | null; // parent network, or null when attached to the implicit "base" root
-  occupancy: number | null; // representative occupancy read off a member atom in atom_site
+  occupancy: number | null; // MARGINAL occupancy, read off a member atom in atom_site
 }
 
 export interface HetExclusion {
   id: string;
   rule: string; // always "NOT"
-  a: string; // heterogeneity_id
-  b: string; // heterogeneity_ids
+  a: string; // alt_group_id
+  b: string; // alt_group_ids
 }
 
-// A legal whole-molecule state: a set of chosen networks (base is always implicitly present).
-export interface HetState {
-  id: string; // "state 1", ...
-  networks: string[]; // chosen network ids (excludes base)
-  label: string; // human description, e.g. "bound + lig_a"
-  probability: number | null; // best-effort joint occupancy, null if any leaf occupancy is unknown
+// One end of a struct_conn bond, as the row names it.
+export interface HetBondEnd {
+  chain: string; // auth_asym_id
+  seq: number; // auth_seq_id
+  comp: string; // auth_comp_id, for the label
+  atomId: string; // label_atom_id
+  altId: string | null; // pdbx_ptnr*_label_alt_id, null when '.'
 }
+
+// A bond from _struct_conn, with the networks it belongs to. The altloc on a partner is what makes
+// a bond alternate-specific: Thr26's carbonyl oxygen reaches the calcium at four different
+// distances, one per letter, and each contact is its own row against its own letter. Resolving
+// which networks own a bond is the same matching rule as for atoms — the partner's key is tested
+// against every network's membership selectors — so a bond follows its network through the state
+// stepper without being annotated twice.
+export interface HetBond {
+  id: string; // _struct_conn.id
+  type: string; // conn_type_id (metalc, covale, disulf, hydrog)
+  a: HetBondEnd;
+  b: HetBondEnd;
+  distance: number | null; // pdbx_dist_value
+  networks: string[]; // networks owning either end; empty when the bond is entirely single-conformer
+}
+
+// A whole-molecule state: a set of networks present together (base is always implicitly present).
+export interface HetState {
+  id: string; // the file's _pdbx_het_state.id, or "state 1", ... when derived
+  networks: string[]; // network ids present in this state (excludes base)
+  label: string; // human description, e.g. "bound + pose_1"
+  probability: number | null; // JOINT occupancy of the combination
+  bundleId: string | null; // the correlation unit this state belongs to
+  provenance: string | null; // how the joint occupancy was arrived at
+  details: string | null; // free text from the file
+}
+
+// Where the state list came from. "stated" means the file enumerates its joint distribution;
+// "independent" means it does not, and we produced the only reading available without one — every
+// combination the coexistence groups allow, weighted by the product of the marginals. The
+// difference matters enough to surface in the UI: one is recorded, the other is an assumption.
+export type StateSource = "stated" | "independent";
 
 export interface HetModel {
   networks: HetNetwork[]; // excludes the implicit base root
   byId: Map<string, HetNetwork>;
   exclusions: HetExclusion[];
   states: HetState[];
+  stateSource: StateSource;
+  bonds: HetBond[]; // _struct_conn, resolved against the networks
 }
 
 // Distinct flat colours, one per network (parallels TLS_PALETTE). base is rendered grey separately.
@@ -117,30 +153,25 @@ export function parseHeterogeneity(raw: unknown): HetModel | null {
       altId: norm(gAlt?.str(r)),
       atomId: norm(gAtom?.str(r)) || null,
     };
-    const net = byId.get(id) ?? { id, members: [], coexistenceGroupId: null, parentId: null, occupancy: null };
+    const net = byId.get(id) ?? { id, members: [], coexistenceGroupId: null, occupancy: null };
     net.members.push(sel);
     byId.set(id, net);
   }
   if (byId.size === 0) return null;
 
-  // --- hierarchy: coexistence group + parent per network ---
+  // --- which networks exclude one another ---
   const hier = block.categories["pdbx_heterogeneity_hierarchy"];
   if (hier) {
     const hId = hier.getField("alt_group_id");
     const hCoex = hier.getField("coexistence_group_id");
-    const hParent = hier.getField("parent_alt_groups_id");
     for (let r = 0; r < hier.rowCount; r++) {
-      const id = norm(hId?.str(r));
-      const net = byId.get(id);
+      const net = byId.get(norm(hId?.str(r)));
       if (!net) continue; // base row (no members) or a stray id
       net.coexistenceGroupId = norm(hCoex?.str(r)) || null;
-      const parent = norm(hParent?.str(r));
-      // "base" and "." both mean "attached to the implicit single-conformer root".
-      net.parentId = parent && parent !== "base" ? parent : null;
     }
   }
 
-  // --- representative occupancy per network, read off the first matching atom_site row ---
+  // --- marginal occupancy per network, read off the first matching atom_site row ---
   assignOccupancies(block, byId);
 
   // --- optional exclusions ---
@@ -149,8 +180,8 @@ export function parseHeterogeneity(raw: unknown): HetModel | null {
   if (excl) {
     const eId = excl.getField("id");
     const eRule = excl.getField("rule");
-    const eA = excl.getField("heterogeneity_id");
-    const eB = excl.getField("heterogeneity_ids");
+    const eA = excl.getField("alt_group_id");
+    const eB = excl.getField("alt_group_ids");
     for (let r = 0; r < excl.rowCount; r++) {
       exclusions.push({
         id: norm(eId?.str(r)) || String(r + 1),
@@ -162,8 +193,69 @@ export function parseHeterogeneity(raw: unknown): HetModel | null {
   }
 
   const networks = [...byId.values()];
-  const states = enumerateStates(networks, byId, exclusions);
-  return { networks, byId, exclusions, states };
+  // A file that states its joint distribution is believed over anything we could derive: that is
+  // the whole point of the state table, and deriving it would mean assuming the independence the
+  // table exists to deny.
+  const stated = readStates(block, byId);
+  return {
+    networks,
+    byId,
+    exclusions,
+    states: stated ?? enumerateStates(networks, exclusions),
+    stateSource: stated ? "stated" : "independent",
+    bonds: readBonds(block, networks),
+  };
+}
+
+// _struct_conn, with each bond attributed to the networks that own its ends.
+//
+// The row is read through the AUTH keys, which is what the rest of this module matches on and what
+// _pdbx_alt_groups points with. (A consumer that resolves the bond in 3D needs the label_ keys as
+// well — Mol* drops a row whose ptnr*_label_asym_id is missing — but that is its business, not
+// this index's.)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function readBonds(block: any, networks: HetNetwork[]): HetBond[] {
+  const sc = block.categories["struct_conn"];
+  if (!sc || sc.rowCount === 0) return [];
+  const f = (name: string) => sc.getField(name);
+  const end = (r: number, n: 1 | 2): HetBondEnd | null => {
+    const chain = norm(f(`ptnr${n}_auth_asym_id`)?.str(r));
+    const seq = f(`ptnr${n}_auth_seq_id`)?.int(r);
+    const atomId = norm(f(`ptnr${n}_label_atom_id`)?.str(r));
+    if (!chain || seq == null || Number.isNaN(seq) || !atomId) return null;
+    return {
+      chain,
+      seq,
+      comp: norm(f(`ptnr${n}_auth_comp_id`)?.str(r)) || norm(f(`ptnr${n}_label_comp_id`)?.str(r)),
+      atomId,
+      altId: norm(f(`pdbx_ptnr${n}_label_alt_id`)?.str(r)) || null,
+    };
+  };
+
+  const out: HetBond[] = [];
+  for (let r = 0; r < sc.rowCount; r++) {
+    const a = end(r, 1);
+    const b = end(r, 2);
+    if (!a || !b) continue;
+    const dist = f("pdbx_dist_value")?.float(r);
+    const owners = new Set<string>();
+    for (const e of [a, b]) {
+      if (!e.altId) continue; // a single-conformer partner belongs to base, not to a network
+      const key: AtomKey = { chain: e.chain, seq: e.seq, altId: e.altId, atomId: e.atomId };
+      for (const net of networks) {
+        if (net.members.some((m) => matchesSelector(m, key))) owners.add(net.id);
+      }
+    }
+    out.push({
+      id: norm(f("id")?.str(r)) || String(r + 1),
+      type: norm(f("conn_type_id")?.str(r)) || "covale",
+      a,
+      b,
+      distance: dist == null || Number.isNaN(dist) ? null : dist,
+      networks: [...owners],
+    });
+  }
+  return out;
 }
 
 function assignOccupancies(
@@ -207,117 +299,113 @@ export function selectorsFor(model: HetModel, networkId: string): AltSelector[] 
   return model.byId.get(networkId)?.members ?? [];
 }
 
-// Is a coexistence group INCOMPLETE — i.e. is "none of them" a legal choice? A group is complete
-// when its members' occupancies sum to their parent's occupancy (1 at the implicit base root):
-// then exactly one member is always chosen. When they sum to less, the remainder is a state in
-// which none of them is present — a partially-occupied water, or a pocket that is empty half the
-// time — and that state has to be enumerable, or the network would appear in no legal state at all.
-// Occupancies come straight off atom_site, so this needs no extra annotation to work out.
-const SUM_TOL = 0.02;
+// The states the FILE states: one row of _pdbx_het_state per combination that occurs, with the
+// networks making it up joined in from _pdbx_het_state_members. The occupancy on the row is the
+// joint occupancy of the whole combination, so it is used as-is — nothing is multiplied out.
+// Returns null when the file carries no state table.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function readStates(block: any, byId: Map<string, HetNetwork>): HetState[] | null {
+  const st = block.categories["pdbx_het_state"];
+  if (!st || st.rowCount === 0) return null;
 
-function groupIsIncomplete(members: HetNetwork[], parentOcc: number): boolean {
-  let sum = 0;
-  for (const n of members) {
-    if (n.occupancy == null) return false; // unknown occupancy: assume the group is complete
-    sum += n.occupancy;
+  const membersOf = new Map<string, string[]>();
+  const mem = block.categories["pdbx_het_state_members"];
+  if (mem) {
+    const mState = mem.getField("state_id");
+    const mNet = mem.getField("alt_group_id");
+    for (let r = 0; r < mem.rowCount; r++) {
+      const sid = norm(mState?.str(r));
+      const nid = norm(mNet?.str(r));
+      if (!sid || !nid || !byId.has(nid)) continue; // "base" and strays carry no atoms
+      (membersOf.get(sid) ?? membersOf.set(sid, []).get(sid)!).push(nid);
+    }
   }
-  return sum < parentOcc - SUM_TOL;
+
+  const sId = st.getField("id");
+  const sBundle = st.getField("bundle_id");
+  const sOcc = st.getField("occupancy");
+  const sProv = st.getField("provenance");
+  const sDetails = st.getField("details");
+  const out: HetState[] = [];
+  for (let r = 0; r < st.rowCount; r++) {
+    const id = norm(sId?.str(r)) || String(r + 1);
+    const nets = membersOf.get(id) ?? [];
+    const occ = sOcc?.float(r);
+    out.push({
+      id,
+      networks: nets,
+      label: nets.length ? nets.join(" + ") : "base only",
+      probability: occ == null || Number.isNaN(occ) ? null : occ,
+      bundleId: norm(sBundle?.str(r)) || null,
+      provenance: norm(sProv?.str(r)) || null,
+      details: norm(sDetails?.str(r)) || null,
+    });
+  }
+  return out.length ? out : null;
 }
 
-// Enumerate the legal whole-molecule states from the hierarchy. Within one coexistence group under a
-// parent at most one network is chosen (mutually exclusive) — exactly one if the group is complete,
-// possibly none if it is not; independent groups under the same parent multiply (cartesian product);
-// a child group opens only if its parent network is chosen (nesting).
-// NOT exclusions then prune any state containing both members of a forbidden pair.
-function enumerateStates(
-  networks: HetNetwork[],
-  byId: Map<string, HetNetwork>,
-  exclusions: HetExclusion[],
-): HetState[] {
-  const childrenOf = new Map<string | null, HetNetwork[]>();
-  for (const net of networks) {
-    const key = net.parentId;
-    (childrenOf.get(key) ?? childrenOf.set(key, []).get(key)!).push(net);
+// Is a coexistence group INCOMPLETE — i.e. is "none of them" a legal choice? A group is complete
+// when its members' marginal occupancies sum to 1: then exactly one member is always chosen. When
+// they sum to less, the remainder is a state in which none of them is present — a partially
+// occupied water, or a pocket that is empty half the time — and that state has to be enumerable,
+// or the network would appear in no state at all. Occupancies come straight off atom_site, so this
+// needs no extra annotation to work out.
+const SUM_TOL = 0.02;
+
+function groupSum(members: HetNetwork[]): number | null {
+  let sum = 0;
+  for (const n of members) {
+    if (n.occupancy == null) return null; // unknown occupancy: treat the group as complete
+    sum += n.occupancy;
+  }
+  return sum;
+}
+
+// The fallback for a file with no state table: every combination its coexistence groups allow,
+// weighted as though the groups were INDEPENDENT — one network drawn from each group, probability
+// the product of the marginals. That is the only reading available from marginals alone, and it is
+// exactly the assumption _pdbx_het_state exists to record instead of assuming. NOT exclusions then
+// prune any combination containing both members of a forbidden pair.
+function enumerateStates(networks: HetNetwork[], exclusions: HetExclusion[]): HetState[] {
+  // group the networks by coexistence group (an unassigned network is its own singleton group)
+  const groups = new Map<string, HetNetwork[]>();
+  for (const n of networks) {
+    const g = n.coexistenceGroupId ?? `:${n.id}`;
+    (groups.get(g) ?? groups.set(g, []).get(g)!).push(n);
   }
 
-  // All combinations of choices for the subtree under `parentId` being active.
-  function enumerate(parentId: string | null, seen: Set<string>): string[][] {
-    const kids = childrenOf.get(parentId) ?? [];
-    const parentOcc = (parentId ? byId.get(parentId)?.occupancy : 1) ?? 1;
-    // group children by coexistence group (a null group is its own singleton)
-    const groups = new Map<string, HetNetwork[]>();
-    for (const n of kids) {
-      const g = n.coexistenceGroupId ?? `:${n.id}`;
-      (groups.get(g) ?? groups.set(g, []).get(g)!).push(n);
-    }
-    let combos: string[][] = [[]];
-    for (const candidates of groups.values()) {
-      const groupOptions: string[][] = [];
-      for (const n of candidates) {
-        if (seen.has(n.id)) continue; // guard against a malformed cycle
-        const sub = enumerate(n.id, new Set(seen).add(n.id));
-        for (const s of sub) groupOptions.push([n.id, ...s]);
-      }
-      if (groupOptions.length === 0) continue;
-      if (groupIsIncomplete(candidates, parentOcc)) groupOptions.push([]); // "none of them"
-      combos = combos.flatMap((c) => groupOptions.map((go) => [...c, ...go]));
-    }
-    return combos;
+  // Each group contributes one choice: a member, or (when the marginals leave room) none of them.
+  // A "none" option carries the leftover probability, which is what makes "ligand, bottom pocket
+  // empty" come out at its own weight rather than being dropped.
+  let combos: { nets: string[]; p: number | null }[] = [{ nets: [], p: 1 }];
+  for (const members of groups.values()) {
+    const sum = groupSum(members);
+    const options: { nets: string[]; p: number | null }[] = members.map((n) => ({
+      nets: [n.id],
+      p: n.occupancy,
+    }));
+    if (sum != null && sum < 1 - SUM_TOL) options.push({ nets: [], p: 1 - sum });
+    combos = combos.flatMap((c) =>
+      options.map((o) => ({
+        nets: [...c.nets, ...o.nets],
+        p: c.p == null || o.p == null ? null : c.p * o.p,
+      })),
+    );
   }
 
-  const raw = enumerate(null, new Set());
   const forbidden = exclusions.filter((e) => e.rule === "NOT" && e.a && e.b);
-  const legal = raw.filter((set) => {
-    const s = new Set(set);
-    return !forbidden.some((e) => s.has(e.a) && s.has(e.b));
-  });
-
-  // Every coexistence group, so a state can be charged for the groups it leaves EMPTY as well as
-  // the ones it fills. Occupancies in atom_site are absolute (a fraction of all copies), which is
-  // why a chosen leaf contributes its occupancy directly rather than a conditional one.
-  const allGroups: { parentId: string | null; members: HetNetwork[]; parentOcc: number }[] = [];
-  for (const [parentId, kids] of childrenOf) {
-    const parentOcc = (parentId ? byId.get(parentId)?.occupancy : 1) ?? 1;
-    const grouped = new Map<string, HetNetwork[]>();
-    for (const n of kids) {
-      const g = n.coexistenceGroupId ?? `:${n.id}`;
-      (grouped.get(g) ?? grouped.set(g, []).get(g)!).push(n);
-    }
-    for (const members of grouped.values()) allGroups.push({ parentId, members, parentOcc });
-  }
-
-  return legal.map((set, i) => {
-    const chosen = new Set(set);
-    // The deepest chosen networks: an ancestor's occupancy is already accounted for by its child.
-    const leaves = set.filter((id) => !set.some((other) => byId.get(other)?.parentId === id));
-    let p: number | null = 1;
-    for (const id of leaves) {
-      const occ = byId.get(id)?.occupancy;
-      if (occ == null) {
-        p = null;
-        break;
-      }
-      p *= occ;
-    }
-    // A group that is open (its parent is chosen, or it hangs off base) but has no member chosen
-    // means "none of these is present" — a real outcome with a real probability, and the state is
-    // not complete without it. This is what makes "ligand, bottom pocket empty" come out at 0.25
-    // rather than 0.50.
-    if (p != null) {
-      for (const g of allGroups) {
-        if (g.parentId != null && !chosen.has(g.parentId)) continue; // group not open in this state
-        if (g.members.some((m) => chosen.has(m.id))) continue; // something was chosen
-        if (!groupIsIncomplete(g.members, g.parentOcc)) continue;
-        let sum = 0;
-        for (const m of g.members) sum += m.occupancy ?? 0;
-        p *= g.parentOcc - sum;
-      }
-    }
-    return {
+  return combos
+    .filter((c) => {
+      const s = new Set(c.nets);
+      return !forbidden.some((e) => s.has(e.a) && s.has(e.b));
+    })
+    .map((c, i) => ({
       id: `state ${i + 1}`,
-      networks: set,
-      label: set.length ? set.join(" + ") : "base only",
-      probability: p,
-    };
-  });
+      networks: c.nets,
+      label: c.nets.length ? c.nets.join(" + ") : "base only",
+      probability: c.p,
+      bundleId: null,
+      provenance: null,
+      details: null,
+    }));
 }

@@ -25,9 +25,9 @@ function C({ children }: { children: ReactNode }) {
 const PROPOSED_CATEGORIES = new Set([
   "pdbx_alt_groups",
   "pdbx_heterogeneity_hierarchy",
+  "pdbx_het_state",
+  "pdbx_het_state_members",
   "pdbx_state_coexistence",
-  "pdbx_occupancy_relationship",
-  "pdbx_occupancy_relationship_member",
 ]);
 
 // The wwPDB's dictionary browser — the published home of the definitions this page borrows. The
@@ -224,10 +224,8 @@ const PARTS: { part?: string; title: string; sections: { id: string; label: stri
     sections: [
       { id: "networks", label: "Explicit state grouping" },
       { id: "subresidue", label: "Membership below the residue" },
-      { id: "nesting", label: "Occupancy that nests" },
-      { id: "exclusions", label: "Exclusion across branches" },
-      { id: "locks", label: "Locking occupancy across branches" },
-      { id: "occupancy", label: "The occupancy specification" },
+      { id: "states", label: "Which alternates go together" },
+      { id: "exclusions", label: "A combination that cannot occur" },
     ],
   },
   {
@@ -288,17 +286,16 @@ export default function ProposalPage() {
             <div className="mb-3 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
               PDBx / mmCIF · proposed extension
             </div>
-            <h1 className="mb-4 text-[30px] font-semibold leading-tight tracking-tight text-slate-900">
+            <h1 className="mb-5 text-[30px] font-semibold leading-tight tracking-tight text-slate-900">
               Encoding structural heterogeneity in mmCIF
             </h1>
             <p className="max-w-[88ch] text-[15px] leading-relaxed text-slate-600">
               A structure is a model of many copies of a molecule, and those copies are not
               identical. A coordinate file records how often each alternate appears, but not which
               alternates appear <em>together</em>. This page states what the format encodes today,
-              where that runs out, and an extension that records the missing information without
-              adding a column to the coordinate table.
+              where that becomes underspecified, and an extension that records the missing information. 
             </p>
-            <p className="mt-3 max-w-[88ch] text-[13px] leading-relaxed text-slate-500">
+            {/* <p className="mt-3 max-w-[88ch] text-[13px] leading-relaxed text-slate-500">
               Every example below is a real mmCIF block: the source on the left, the structure on the
               right. Open a figure to load it, then click anything — a network, a state, an altloc
               letter, or a highlighted term in the example&rsquo;s own description — to select it in
@@ -311,7 +308,7 @@ export default function ProposalPage() {
                 appendix
               </a>
               .
-            </p>
+            </p> */}
           </header>
 
           <nav className="border-y border-slate-100 py-4 xl:hidden">
@@ -343,14 +340,13 @@ export default function ProposalPage() {
           <Section id="inventory" title="How the PDB encodes heterogeneity today">
             <p>
               Several parts of the PDBx/mmCIF dictionary already record that the copies of a molecule
-              differ from one another. They are listed here as a plain inventory, because the
-              extension proposed below adds to them and replaces none of them.
-            </p>
+              differ from one another, some historical. The proposed extension provides an alternative mechanism anoter alternative mechanism yet, but its addition is motivated by the shortcomings of the categories listed here (elaborated on below) .
+Of these, the ones i focus on here are mainly <It cat="atom_site" field="label_alt_id" /> and <It cat="atom_site" field="occupancy" /> and their interplay. Others are either outside of the structural scope of this document or defacto obsolete.
+              
+              </p>
             <MethodsInventory />
             <p>
-              The first of these carries the everyday case, and it is what the rest of this document
-              is about. The question is what those two columns can and cannot say.
-            </p>
+              </p>
           </Section>
 
           <PartDivider part="I" title="The problem: which alternates go together" />
@@ -367,23 +363,28 @@ export default function ProposalPage() {
             </p>
             <p>
               Both describe one item at a time: how often it appears, on its own. Neither says which
-              alternates appear in the <em>same</em> copy. That is the missing quantity, and the
-              whole of this document follows from it.
-            </p>
-            <p>
-              Two adjacent sites make the gap concrete. The top site holds one of two occupants, and
-              the bottom site holds one of two others; each of the four is present in half the
-              copies. Three physically different crystals then produce a byte-for-byte identical
+              alternates appear in the same copy or <em>state</em>. We tackle this later. 
+              Here is a toy/abstract example where this becomes problematic:<em>The top site holds one of two occupants (X or Y), and
+              the bottom site holds one of two others(P or Q); each of the four members is present in half of the
+              copies of the crystal.</em>
+              Three physically different crystals then produce a byte-for-byte identical
               file:
             </p>
             <ThreeAnswers />
             <p>
               Each table counts, out of 100 copies, how often a pair of occupants is found together.
-              The numbers along the edges — how often each occupant appears at all — are what the
-              file records, and they are identical in all three. The interiors are completely
+              The numbers along the edges (the marginals) — how often each occupant appears at all — are what the
+              file records, and they are identical in all three. The interiors (the joints) are completely
               different, and the interior is what the file has no way to write down. In the first,
               the two sites are filled independently; in the second, they always go together; in the
               third, they never do.
+            </p>
+            <p>
+              Everything that follows is about those two things and their names. The edge numbers are{" "}
+              <em>marginals</em>, one per occupant, and <It cat="atom_site" field="occupancy" /> is
+              exactly a column of them. The interior is the <em>joint</em>, and{" "}
+              <Ref to="states">the extension&rsquo;s central category</Ref> is a way of writing one
+              interior cell per row.
             </p>
             <p>
               The altloc letter cannot recover the difference, because what it guarantees is local:
@@ -398,7 +399,7 @@ export default function ProposalPage() {
 
           <Section id="today" title="The letter and the occupancy">
             <p>
-              A coordinate file is a spine of cross-references: a few small categories declare what
+              A few small categories declare what
               the molecule is, and one large category, <Cat name="atom_site" />, holds the
               coordinates and points back at them through shared keys. Below is a complete, valid
               file for three residues of crambin, with no heterogeneity in it at all — every atom is
@@ -423,7 +424,7 @@ export default function ProposalPage() {
               caption="The atoms on the right are exactly the rows of the _atom_site loop on the left."
             />
             <p>
-              Heterogeneity enters through the two columns. Here one arginine side chain is modelled
+              Heterogeneity enters through the two columns: <It cat="atom_site" field="label_alt_id" /> and <It cat="atom_site" field="occupancy" />. Here one arginine side chain is modelled
               in two positions, <C>A</C> at 0.67 and <C>B</C> at 0.33, summing to one within the
               residue. Its backbone carries no letter at all: it is single-conformer and shared by
               both alternatives.
@@ -464,7 +465,7 @@ export default function ProposalPage() {
               ), so a bond can belong to one alternate and not another. And there is a legacy
               mechanism for grouping the letters, which is dormant in practice:
             </p>
-            <Aside summary="_atom_sites_alt — the existing grouping mechanism, and why it is not enough">
+            {/* <Aside summary="_atom_sites_alt — the existing grouping mechanism, and why it is not enough">
               <p>
                 <Cat name="atom_sites_alt" /> names altloc letters and describes them, and{" "}
                 <Cat name="atom_sites_alt_ens" /> with <Cat name="atom_sites_alt_gen" /> collects
@@ -478,7 +479,7 @@ export default function ProposalPage() {
                 no parent/child relation between alternates, and no occupancy semantics. The
                 extension proposed here supersedes it.
               </p>
-            </Aside>
+            </Aside> */}
             <p>
               The mechanism above works because everything it relates sits inside one residue. It
               stops working as soon as a relationship spans more than one.
@@ -530,11 +531,12 @@ export default function ProposalPage() {
             />
           </Section>
 
-          <Section id="escalator" title="Where the two columns run out">
+          <Section id="escalator" title="Where the altlocs and occupancy become insufficient">
             <p>
               Seven cases, in increasing order of difficulty. The first is handled completely by
               what exists today; each one after it asks for something the letter and the occupancy
-              cannot supply, and the last is beyond this proposal too.
+              cannot supply. The last is expressible here too, but at a price worth naming, so it
+              points at Part V rather than at a case.
             </p>
             <Escalator />
           </Section>
@@ -543,21 +545,27 @@ export default function ProposalPage() {
 
           <Section id="categories" title="The proposed categories">
             <p>
-              The extension is four optional categories. They point <em>into</em>{" "}
+              The extension is five optional categories, and they do three separate jobs: name the
+              alternate states, say which of them exclude one another, and record which of them
+              occur <em>together</em>, in what proportion. They point <em>into</em>{" "}
               <Cat name="atom_site" /> through the keys it already has and add no column to it, so a
               program that does not know them reads exactly the coordinates it reads today. Each is
               applied to a real case in <Ref to="networks">Part IV</Ref>.
             </p>
             <CategoryReference />
             <p>
-              Two reading rules tie them together. First, alternatives that share a{" "}
+              First, alternatives that share a{" "}
               <It cat="pdbx_heterogeneity_hierarchy" field="coexistence_group_id" bare /> are
-              mutually exclusive, and that exclusivity is inherited by their descendants — which is
-              why an explicit exclusion list is needed only when networks in different branches
-              clash. Second, the always-present single-conformer part of the structure is the
-              implicit root network, <C>base</C>: occupancy 1, the root of the tree, carrying no
-              membership rows because its atoms are simply everything that no other network claims.
-              Only alternates are ever listed.
+              mutually exclusive: at most one of them is present in any one copy. Second, the
+              always-present single-conformer part of the structure is the implicit network{" "}
+              <C>base</C>: occupancy 1, carrying no membership rows because its atoms are simply
+              everything that no other network claims. Only alternates are ever listed.
+              Third, and this is the one that is new: a state lists the networks that are{" "}
+              <em>present</em>, and a bundle&rsquo;s states are exhaustive. A site left empty in some
+              state is spelled by leaving it out, and any combination a bundle does not list has
+              joint occupancy zero. That is what lets a state name a thing with no atoms in it — the
+              78% of copies in which a ligand is simply not there — and it is why a bundle needs no
+              exclusion rows of its own.
             </p>
           </Section>
 
@@ -617,11 +625,17 @@ export default function ProposalPage() {
                   <p>
                     The file also carries <Cat name="struct_conn" />, the standard category that
                     records which atoms are chemically bonded — here, the bonds from the calcium ion
-                    to the oxygens that coordinate it. These are <em>alternate-specific</em>:
-                    Thr26&rsquo;s carbonyl oxygen reaches the ion at 2.33, 2.45, 2.65 and 2.10 Å in
-                    alternates A, B, C and D, and each of those four contacts is recorded as its own
-                    bond against its own letter. It is worth noticing how it points at those atoms —
-                    by chain, residue, atom name <em>and</em> altloc, through{" "}
+                    to the oxygens that coordinate it, drawn dashed in the viewer. These are{" "}
+                    <em>alternate-specific</em>: Thr26&rsquo;s carbonyl oxygen reaches the ion at
+                    2.33, 2.45, 2.65 and 2.10 Å in alternates A, B, C and D, and each of those four
+                    contacts is recorded as its own bond against its own letter. The{" "}
+                    <strong className="font-semibold text-slate-700">bonds</strong> strip below the
+                    viewer lists them: pick one and it lights up in 3D and in the source at once,
+                    and stepping through the states dims the bonds whose alternate is not present.
+                  </p>
+                  <p>
+                    It is worth noticing how a bond points at its atoms — by chain, residue, atom
+                    name <em>and</em> altloc, through{" "}
                     <It cat="struct_conn" field="pdbx_ptnr1_label_alt_id" />. That is the same key{" "}
                     <Cat name="pdbx_alt_groups" /> uses, and it is already in the dictionary: naming
                     alternates by pointing into <Cat name="atom_site" /> is an established move, not
@@ -635,7 +649,7 @@ export default function ProposalPage() {
 
           <Section
             id="subresidue"
-            title="Membership below the residue"
+            title="Membership below the residue (specifying alt groups with atom-precision)"
             subtitle={
               <>
                 Improves on: <It cat="atom_site" field="label_alt_id" />, which cannot split a
@@ -659,8 +673,8 @@ export default function ProposalPage() {
             <p>
               The optional <It cat="pdbx_alt_groups" field="label_atom_id" /> is the escape hatch:
               when a membership row names an atom, it claims exactly that atom and nothing else. A
-              membership table with it is precisely as expressive as a per-atom state label, with{" "}
-              <Cat name="atom_site" /> left alone.
+              membership table with it is precisely as expressive as a per-atom state label, reuses the fields that are already present on
+              <Cat name="atom_site" />.
             </p>
             <StageFigure
               id="5E1N_gln8_split"
@@ -709,49 +723,36 @@ export default function ProposalPage() {
           </Section>
 
           <Section
-            id="nesting"
-            title="Occupancy that nests"
+            id="states"
+            title="Which alternates go together"
             subtitle={
               <>
-                Improves on: the flat occupancy group, which can only say &ldquo;these sum to
-                one&rdquo;
+                New: <Cat name="pdbx_het_state" /> — the joint occupancies that the per-atom column
+                cannot hold
               </>
             }
           >
             <p>
-              An occupancy group is a flat thing: a set of alternatives that sum to one. But a choice
-              can exist only <em>inside</em> another choice — you cannot pick which way a ligand is
-              posed in the copies where the ligand is not there at all. A flat group cannot say that,
-              because the inner alternatives do not sum to one; they sum to however often the outer
-              choice happened.
+              Everything so far names alternates and says which of them exclude one another. Neither
+              says which alternates are found in the <em>same</em> copy, and that is the quantity{" "}
+              <Ref to="problem">Part I</Ref> was about: <It cat="atom_site" field="occupancy" /> is a
+              list of marginals, one per network, and the same list is produced by physically
+              different structures.
             </p>
             <p>
-              The file below is a fragment-screening entry. Its binding pocket is modelled in two
-              conformations, apo at 0.78 and bound at 0.22, and the ligand is modelled in two
-              mutually exclusive poses at 0.13 and 0.09. Those numbers are deposited, and the
-              arithmetic is the whole argument:
-            </p>
-            <Equation>0.13 + 0.09 = 0.22 = occupancy(bound)</Equation>
-            <p>
-              Two columns carry this.{" "}
-              <It cat="pdbx_heterogeneity_hierarchy" field="parent_alt_groups_id" bare /> names{" "}
-              <C>bound</C> as the poses&rsquo; parent, and{" "}
-              <It cat="pdbx_heterogeneity_hierarchy" field="occupancy_completeness" bare /> set to{" "}
-              <C>complete</C> says the group sums to that parent rather than to one. Two consequences
-              follow from the parent link alone, with nothing else written down. A pose can never
-              co-occur with apo, because reaching a pose means passing through <C>bound</C>, and{" "}
-              <C>bound</C> and <C>apo</C> are in one coexistence group — so{" "}
-              <Cat name="pdbx_state_coexistence" /> stays empty here. And the ligand&rsquo;s{" "}
-              <em>absence</em>, the 78% of copies in which it has no atoms at all, finally has a name:
-              the <C>apo</C> node. A state with no atoms cannot be labelled by any per-atom
-              mechanism — there is no atom to put the label on — but a node in a tree carries it
-              without difficulty.
-            </p>
+              <Cat name="pdbx_het_state" /> writes the missing quantity down directly, one row per
+              combination that occurs. A row&rsquo;s{" "}
+              <It cat="pdbx_het_state" field="occupancy" bare /> is the <em>joint</em> occupancy —
+              the fraction of copies in exactly that combination, not the occupancy of any member —
+              and the networks making it up are listed in{" "}
+              <Cat name="pdbx_het_state_members" />, one per row, because an mmCIF cell holds a
+              single value.
+              </p>
             <StageFigure
               id="7HHS_apo_bound"
               fileUrl="/examples/het/7HHS_apo_bound.cif"
               het
-              codeTitle="7HHS_apo_bound — a nested tree: apo / bound → pose_1, pose_2"
+              codeTitle="7HHS_apo_bound — one bundle, three states, deposited numbers"
               brief={
                 <>
                   <p>
@@ -760,15 +761,18 @@ export default function ProposalPage() {
                     <Tok res="A/47-49">residues 47–49</Tok> of chain A — plus both modelled poses of
                     ligand A1A7O. The pocket is modelled in two conformations,{" "}
                     <Tok net="apo">apo at 0.78</Tok> and <Tok net="bound">bound at 0.22</Tok>, which
-                    share one occupancy group under <C>base</C>.
+                    exclude each other; the ligand in two poses that occupy the same space — their
+                    closest atoms are 0.02 Å apart, so they cannot both be there —{" "}
+                    <Tok net="pose_1">pose_1 at 0.13</Tok> on residue 201 and{" "}
+                    <Tok net="pose_2">pose_2 at 0.09</Tok> on residue 202.
                   </p>
                   <p>
-                    The ligand is modelled twice, as two mutually exclusive poses that occupy the same
-                    space — their closest atoms are 0.02 Å apart, so they cannot both be there:{" "}
-                    <Tok net="pose_1">pose_1 at 0.13</Tok> on residue 201 and{" "}
-                    <Tok net="pose_2">pose_2 at 0.09</Tok> on residue 202. They share a second
-                    occupancy group whose <em>parent</em> is <Tok net="bound">bound</Tok>, which is
-                    what makes 0.13 + 0.09 sum to 0.22 rather than to 1.
+                    Those four numbers are the marginals, and they are all{" "}
+                    <C>_atom_site</C> carries. The state table adds which pose accompanies which
+                    pocket conformation: both poses belong to <Tok net="bound">bound</Tok>, and
+                    neither ever occurs with <Tok net="apo">apo</Tok>. Because that is written as a
+                    list of combinations rather than as a rule, nothing has to forbid the rest — the
+                    combinations not listed have occupancy zero.
                   </p>
                   <p>
                     Note also that the ligand&rsquo;s letters (B, C) do not line up with the
@@ -778,29 +782,34 @@ export default function ProposalPage() {
                   </p>
                 </>
               }
-              caption="PDB 7HHS. Three legal whole-molecule states: apo (0.78), bound + pose_1 (0.13), bound + pose_2 (0.09). The nesting forbids the rest."
+              caption="PDB 7HHS. Three states in one bundle: apo (0.78), bound + pose_1 (0.13), bound + pose_2 (0.09)."
             />
+            <h3 className="pt-2 text-[15px] font-semibold text-slate-900">
+              The bundle: how far a state reaches
+            </h3>
             <p>
-              Which network is the parent is a <em>choice</em>, and getting it wrong is the easiest
-              way to misuse the hierarchy — the file stays syntactically valid and starts lying. The
-              two figures below are the same forty atoms with the same occupancies, and differ in one
-              column.
+              A state is a joint assignment, and the obvious worry about joint assignments is that
+              they grow: if a state had to name every alternate in the structure, a protein with
+              forty partial waters would need a table of astronomical size.{" "}
+              <It cat="pdbx_het_state" field="bundle_id" bare /> is what stops that. Networks whose
+              occupancies are entangled — where knowing one changes the distribution of another —
+              share a bundle, and that bundle&rsquo;s states enumerate their joint distribution and
+              nothing else. Networks in different bundles are independent: their occupancies
+              multiply, and they are never written out together.
             </p>
             <p>
-              A ligand or a glycol sits in a top pocket at 0.50 each; a second glycol sits in a bottom
-              pocket at 0.30, or a third at 0.20. Write both pockets as children of <C>base</C> and
-              the tree says they vary independently, so the states below the viewer are every
-              combination of the two — including <Tok net="Ligand">Ligand</Tok> together with{" "}
-              <Tok net="EDO2">EDO2</Tok>. But the bottom pocket sums to 0.50, which is exactly{" "}
-              <Tok net="EDO1">EDO1</Tok>&rsquo;s occupancy, and that is the arithmetic of{" "}
-              <Ref to="nesting">nesting</Ref>: the bottom pocket is filled precisely when EDO1 is on
-              top. The file contradicts its own numbers.
+              The second case is the one the marginals cannot decide, and it is the pair of pockets
+              from <Ref to="problem">Part I</Ref>. A phenol ligand or a
+              glycol sits in a top pocket at 0.50 each; a second glycol sits in a bottom pocket at
+              0.30, a third at 0.20, or the pocket is empty. Those four numbers are everything a
+              deposited file carries today, and they are consistent with any number of different
+              pairings. Six states say which pairing it is.
             </p>
             <StageFigure
-              id="constructed_two_pocket_flat"
-              fileUrl="/examples/het/constructed_two_pocket_flat.cif"
+              id="constructed_two_pocket"
+              fileUrl="/examples/het/constructed_two_pocket.cif"
               het
-              codeTitle="constructed_two_pocket_flat — both pockets parented to base"
+              codeTitle="constructed_two_pocket — six states in one bundle"
               brief={
                 <>
                   <p>
@@ -809,92 +818,78 @@ export default function ProposalPage() {
                     against it. The top pocket, <Tok res="A/501">residue 501</Tok>, holds{" "}
                     <Tok net="Ligand">Ligand at 0.50</Tok> or <Tok net="EDO1">EDO1 at 0.50</Tok>. The
                     bottom pocket, <Tok res="A/502">residue 502</Tok>, holds{" "}
-                    <Tok net="EDO2">EDO2 at 0.30</Tok> or <Tok net="EDO3">EDO3 at 0.20</Tok>.
+                    <Tok net="EDO2">EDO2 at 0.30</Tok>, <Tok net="EDO3">EDO3 at 0.20</Tok>, or
+                    nothing.
                   </p>
                   <p>
-                    Every network here names <C>base</C> as its parent, so the bottom pocket has to
-                    call itself <C>incomplete</C> — it sums to 0.50 against a parent of 1.0, and the
-                    file offers no account of the missing half. Read the state list: it contains{" "}
-                    <Tok net="Ligand">Ligand</Tok> with <Tok net="EDO2">EDO2</Tok>, a state the
-                    occupancies rule out.
+                    The six states are one bundle, because what the bottom pocket does depends on
+                    what sits above it. Read them against the marginals: the majority species is{" "}
+                    <Tok net="EDO1">EDO1</Tok> + <Tok net="EDO2">EDO2</Tok> at 0.25, where two
+                    independent pockets would have given 0.50 × 0.30 = 0.15, and{" "}
+                    <Tok net="Ligand">Ligand</Tok> with <Tok net="EDO2">EDO2</Tok> is rare at 0.05
+                    rather than the same 0.15. Every column still sums to the deposited occupancy —
+                    Ligand 0.05 + 0.15 + 0.30 = 0.50 — so the coordinates are untouched and the
+                    correlation is the whole of what has been added.
+                  </p>
+                  <p>
+                    Two states, 3 and 6, name only a top-pocket occupant. That is an empty bottom
+                    pocket, spelled by omission: a state lists what is present, so 0.30 of the copies
+                    have the ligand above and nothing below.
                   </p>
                 </>
               }
-              caption="The wrong parent. Nothing is malformed — the tree simply claims an independence the numbers deny."
+              caption="Six states, one bundle. The four marginals are the same in every reading of this site; the six joint numbers are not."
             />
-            <p>
-              The fix is one column. Name <Tok net="EDO1">EDO1</Tok> as the bottom pocket&rsquo;s
-              parent instead of <C>base</C>, and the group becomes <C>complete</C>: it sums to its
-              parent, 0.30 + 0.20 = 0.50 = O(EDO1). The false states disappear on their own, because
-              reaching EDO2 now means passing through EDO1, and EDO1 excludes Ligand. This is the
-              7HHS tree above, with different names.
-            </p>
-            <StageFigure
-              id="constructed_two_pocket"
-              fileUrl="/examples/het/constructed_two_pocket.cif"
-              het
-              codeTitle="constructed_two_pocket — the bottom pocket nested under EDO1"
-              brief={
-                <>
-                  <p>
-                    <strong className="font-semibold text-slate-700">Constructed.</strong> Byte for
-                    byte the same atoms as the figure above. The only change is in{" "}
-                    <Cat name="pdbx_heterogeneity_hierarchy" />:{" "}
-                    <It cat="pdbx_heterogeneity_hierarchy" field="parent_alt_groups_id" bare /> reads{" "}
-                    <C>EDO1</C> instead of <C>base</C> on <Tok net="EDO2">EDO2</Tok> and{" "}
-                    <Tok net="EDO3">EDO3</Tok>, and{" "}
-                    <It cat="pdbx_heterogeneity_hierarchy" field="occupancy_completeness" bare />{" "}
-                    reads <C>complete</C> instead of <C>incomplete</C>.
-                  </p>
-                  <p>
-                    Three states remain, which is the right number:{" "}
-                    <Tok net="Ligand">Ligand</Tok> at 0.50, <Tok net="EDO1">EDO1</Tok> +{" "}
-                    <Tok net="EDO2">EDO2</Tok> at 0.30, <Tok net="EDO1">EDO1</Tok> +{" "}
-                    <Tok net="EDO3">EDO3</Tok> at 0.20. No exclusion row and no occupancy relationship
-                    were needed — the parent link is doing all of it.
-                  </p>
-                </>
-              }
-              caption="The same atoms, one column different. The coupling is not recorded anywhere; it follows from the shape of the tree."
-            />
+            {/* <p>
+              One more column, and it is the honest answer to the first question a refinement person
+              asks. <It cat="pdbx_het_state" field="provenance" bare /> records where the joint
+              number came from: <C>fit</C> if it was refined against the data, <C>restraint</C> if a
+              program was told to hold it, <C>assert</C> if the depositor is stating it with no
+              program behind it, <C>measured</C> if it came from an independent experiment. Two files
+              whose numbers are identical can differ entirely in what those numbers are worth, and
+              the coordinates do not show it. The 7HHS figure is <C>fit</C>, the constructed one{" "}
+              <C>assert</C>. <Ref to="open">Where a joint occupancy can come from at all</Ref> is
+              discussed in Part V, and it is not a small question.
+            </p> */}
           </Section>
 
           <Section
             id="exclusions"
-            title="Exclusion across branches"
+            title="A combination that cannot occur"
             subtitle={
               <>
-                New: no existing category can say that two alternates must not co-occur
+                New: <Cat name="pdbx_state_coexistence" /> — a zero in the joint, where there is no
+                distribution to write
               </>
             }
           >
             <p>
-              Everything so far gets its exclusivity from structure: alternates in one coexistence
-              group rule each other out because that is what the group means, and a nested child
-              inherits its parent&rsquo;s exclusions. Neither mechanism reaches across the tree. Two
-              networks in different branches can be physically incompatible while the tree, quite
-              correctly, implies nothing about them at all — and there is no column in mmCIF today
-              that records the incompatibility. That gap is the one thing{" "}
-              <Cat name="pdbx_state_coexistence" /> exists for.
+              A bundle woudl be the right tool when you know the populations. We can imagine a case where you know only that
+              one combination is impossible — no proportions, no correlation, just a pairing that
+              cannot happen. That is a single zero in the joint distribution, and building a whole
+              bundle around it would mean inventing the other numbers.
             </p>
             <p>
               Below, an arginine side chain is modelled in three alternates and a nearby water at
-              partial occupancy. They live in different branches — one is a rotamer, the other a
-              solvent site — so nothing in the hierarchy forbids them co-occurring. But in alternate
-              B the guanidinium nitrogen lands 2.14 Å from the water: not a hydrogen bond, a clash.
-              One <C>NOT</C> row records it.
+              partial occupancy. They are not alternatives of each other — one is a rotamer, the
+              other a solvent site — so no coexistence group relates them, and nothing says the
+              water is more likely with one rotamer than another. But in alternate B the guanidinium
+              nitrogen lands 2.14 Å from the water: not a hydrogen bond, a clash. One <C>NOT</C> row
+              records exactly that, and claims nothing else.
             </p>
             <p>
-              This is the only exclusion in the whole of the prototype annotation of 5E1N, which is
-              the argument for keeping the category optional, sparse, and <C>NOT</C>-only.{" "}
-              <C>AND</C> and <C>OR</C> were deliberately left out: they admit several readings.
+              The two mechanisms do not overlap, and a file should never use both for the same
+              combination: a bundle already forbids by omission everything it does not list, so a{" "}
+              <C>NOT</C> among a bundle&rsquo;s own members would be redundant at best and
+              contradictory at worst. Correlated sites with populations you know get a bundle; a
+              stray impossible pairing between otherwise independent sites gets a row here.
             </p>
             <StageFigure
               id="5E1N_arg74_clash"
               fileUrl="/examples/het/5E1N_arg74_clash.cif"
               het
               height="520px"
-              codeTitle="5E1N_arg74_clash — one explicit NOT row, the cross-branch clash"
+              codeTitle="5E1N_arg74_clash — one NOT row, and no bundle"
               brief={
                 <>
                   <p>
@@ -907,268 +902,59 @@ export default function ProposalPage() {
                   <p>
                     Alternates <Tok net="arg74_C">C</Tok> and <Tok net="arg74_D">D</Tok> clear the
                     water by 3.97 and 4.80 Å. Only <Tok net="arg74_B">B</Tok> collides, at 2.14 Å.
-                    The exclusion is specific to one alternate, which is exactly why it cannot be
-                    inferred from the tree: the rotamer and the solvent site are not siblings, and no
-                    occupancy group relates them.
+                    The exclusion is specific to one alternate, and it is not implied by anything
+                    else in the file: the rotamer and the solvent site are not alternatives of each
+                    other, and no coexistence group relates them.
+                  </p>
+                  <p>
+                    This file carries no state table, and the strip below the viewer says so. Its
+                    state list is the app&rsquo;s own reading — every combination the two groups
+                    allow, weighted as though they were independent, with the forbidden pairing
+                    struck out. Those percentages are an assumption, not a record, which is exactly
+                    the difference <Cat name="pdbx_het_state" /> exists to remove. Here there is
+                    nothing better to record: nobody measured how often the water accompanies
+                    rotamer C rather than D.
                   </p>
                 </>
               }
-              caption="PDB 5E1N, Arg74 and water 468. The one real NOT in the file."
-            />
-            <p>
-              One caveat, and it is a cost rather than a claim. A <C>NOT</C> row is not the only
-              annotation that points at alternates: <Cat name="struct_conn" /> does too, as the
-              calcium site in <Ref to="networks">the first case</Ref> shows — each metal bond names
-              the letter it belongs to. So a depositor annotating that entry maintains two independent
-              sets of pointers into <Cat name="atom_site" />, the membership rows and the bond
-              records, and nothing checks them against each other. Renumber a residue and both must
-              move. This proposal does not fix that; it inherits it.
-            </p>
-          </Section>
-
-          <Section
-            id="locks"
-            title="Locking occupancy across branches"
-            subtitle={
-              <>
-                New: <Cat name="pdbx_occupancy_relationship" /> — for a tie between two networks that
-                no parent link relates
-              </>
-            }
-          >
-            <p>
-              Every tie so far has run between a network and its own parent, and the parent link plus{" "}
-              <It cat="pdbx_heterogeneity_hierarchy" field="occupancy_completeness" bare /> has
-              carried it. One kind does not fit that shape. Two sites can be held to the{" "}
-              <em>same</em> occupancy while sitting in different branches, with neither one inside the
-              other — most commonly when two NCS-related copies of a partial ligand are restrained to
-              refine together. There is no parent to hang it on: neither copy contains the other, and
-              they share no coexistence group. The hierarchy has nothing to say, and it is right not
-              to.
-            </p>
-            <p>
-              This is the one case that needs a category of its own, and it is deliberately small.{" "}
-              <Cat name="pdbx_occupancy_relationship" /> is a tie between named networks, written as
-              data rather than arithmetic: a head row gives the tie&rsquo;s{" "}
-              <It cat="pdbx_occupancy_relationship" field="type" bare /> and its{" "}
-              <It cat="pdbx_occupancy_relationship" field="target" bare />, and{" "}
-              <Cat name="pdbx_occupancy_relationship_member" /> lists the networks on the other side,
-              one per row. The member list is a separate table only because an mmCIF field has to hold
-              a single value — a tie over three networks cannot be a comma-separated cell. There are
-              two types and no others:
-            </p>
-            <RelationshipTypes />
-            <p>
-              Note what <C>sum_to</C> is <em>not</em> for. A set of alternatives summing to their own
-              parent is the ordinary nested case from <Ref to="nesting">the previous section</Ref>,
-              and it is already said by the parent link — writing it again here would be redundant,
-              and the dictionary says so. <C>sum_to</C> is for a sum whose target is somewhere else in
-              the tree. In practice almost every real tie is <C>equal</C>.
-            </p>
-            <p>
-              The third column is the one that makes this portable rather than decorative.{" "}
-              <It cat="pdbx_occupancy_relationship" field="enforced" bare /> records{" "}
-              <em>who made the relation true</em> — whether a program held the numbers to it, or the
-              depositor is asserting it after the fact. That distinction is invisible in the
-              coordinates: two files whose occupancies happen to match look identical to one where a
-              refinement program was forbidden to let them drift. Three values carry it:{" "}
-              <C>constraint</C>, a hard constraint during refinement, so the numbers could not have
-              come out otherwise; <C>restraint</C>, a soft one with a sigma, so they were pulled
-              toward it; and <C>annotation</C>, meaning no program fit it at all and the depositor is
-              recording the relation so a later one can act on it.
-            </p>
-            <p>
-              The file below uses <C>annotation</C>, and honestly so — as does every relationship row
-              in this repository. That is not a limitation of the encoding but of the field: no
-              mainstream refinement program can tie occupancies across two NCS copies of a partial
-              ligand today. Which is also why the example is constructed. The tie is exactly the thing
-              deposition discards, so no deposited file can carry it; what a real entry leaves behind
-              is two copies at suspiciously identical occupancy, and a reader with no way to know
-              whether that was intended or a coincidence.
-            </p>
-            <StageFigure
-              id="constructed_ncs_lock"
-              fileUrl="/examples/het/constructed_ncs_lock.cif"
-              het
-              codeTitle="constructed_ncs_lock — one equal row, the cross-branch lock"
-              brief={
-                <>
-                  <p>
-                    <strong className="font-semibold text-slate-700">Constructed.</strong> Two copies
-                    of a real 1EJG tripeptide, related by a proper NCS operator — a two-fold, then a
-                    16 Å translation — so chain B is geometrically identical to chain A. Each carries
-                    one ethylene glycol, built to its correct internal geometry, in the equivalent
-                    site: <Tok net="edo_A">edo_A at 0.40</Tok> and <Tok net="edo_B">edo_B at 0.40</Tok>
-                    .
-                  </p>
-                  <p>
-                    Each glycol is a lone partial network — no modelled alternative sits opposite it —
-                    so its{" "}
-                    <It cat="pdbx_heterogeneity_hierarchy" field="occupancy_completeness" bare /> is{" "}
-                    <C>single</C>: present in 40% of copies, with nothing to sum against. They sit in
-                    different coexistence groups, both directly under <C>base</C>. Nothing in the tree
-                    connects them, which is the point.
-                  </p>
-                  <p>
-                    The tie is the one row at the foot of the block:{" "}
-                    <It cat="pdbx_occupancy_relationship" field="type" bare /> <C>equal</C>,{" "}
-                    <It cat="pdbx_occupancy_relationship" field="target" bare /> <C>edo_A</C>, one
-                    member row naming <C>edo_B</C>. Read it as O(edo_B) = O(edo_A). No coefficients,
-                    no equation — two names and a type.
-                  </p>
-                  <p>
-                    One thing it does <em>not</em> say, and the state list below the viewer is the
-                    proof: the four combinations are all still there, including one glycol without the
-                    other. That is correct. The tie fixes the two <em>numbers</em> to each other — it
-                    is a statement about what refinement was allowed to do — and says nothing about
-                    whether the two sites fill together. Two sites can each be 40% occupied and be
-                    entirely unrelated. Co-occurrence is what a coexistence group and the tree are
-                    for, and neither is claimed here.
-                  </p>
-                </>
-              }
-              caption="Two NCS copies at one occupancy: the only tie on this page that no parent link could have carried."
-            />
-          </Section>
-
-          <Section
-            id="occupancy"
-            title="The occupancy specification"
-            subtitle={
-              <>
-                Improves on: <It cat="atom_site" field="occupancy" /> — a number with no record of
-                what tied it there
-              </>
-            }
-            tag="experimental"
-          >
-            <p>
-              Everything above concerns which alternates exist and which go together. This section is
-              about something narrower that is lost at deposition, and it is marked experimental
-              because the hardest of the three cases it describes fits no refinement program in use
-              today.
-            </p>
-            <p>
-              The occupancy <em>numbers</em> survive deposition. The <em>specification</em> that
-              produced them does not. Whether two alternates were constrained to be complementary or
-              merely happen to sum to one, and whether a group&rsquo;s total was refined or held
-              fixed, lives in the refinement program&rsquo;s keyword file and is discarded. A reader
-              of the deposited file cannot tell the two apart, because they look identical:
-            </p>
-            <OccupancySpec />
-            <p>
-              Three optional columns on <Cat name="pdbx_heterogeneity_hierarchy" /> carry it back —{" "}
-              <It cat="pdbx_heterogeneity_hierarchy" field="occupancy_completeness" bare /> (the sum
-              rule), <It cat="pdbx_heterogeneity_hierarchy" field="occupancy_refine_flag" bare />{" "}
-              (refined or fixed) and{" "}
-              <It cat="pdbx_heterogeneity_hierarchy" field="occupancy_value" bare /> (the held
-              value) — and a fourth,{" "}
-              <It cat="pdbx_heterogeneity_hierarchy" field="state_kind" bare />, records whether an
-              alternate is conformational (the same thing in a different pose) or compositional
-              (something present or absent). Hover any of them for its definition and the values it
-              takes.
-            </p>
-            <p>What a program can do with them falls into three tiers:</p>
-            <TierTable />
-            <p>
-              The third tier is the experimental part. Nothing mainstream fits a child sum tied to a
-              refinable parent today; the columns record it so that a pipeline can grow into it, and
-              so that a reader can tell a constrained number from a coincidental one. A program that
-              ignores all four columns reads exactly the structure it read before.
-            </p>
-            <StageFigure
-              id="7HHS_apo_bound_occ"
-              fileUrl="/examples/het/7HHS_apo_bound_occ.cif"
-              het
-              codeTitle="7HHS_apo_bound_occ — the nested tree + the occupancy specification"
-              brief={
-                <>
-                  <p>
-                    The same structure and the same tree as{" "}
-                    <Ref to="nesting">the nested-occupancy figure</Ref>, now carrying the
-                    specification. <Tok net="apo">apo</Tok> + <Tok net="bound">bound</Tok> = 1 is{" "}
-                    <C>complete</C> under the root: an ordinary occupancy group, which every
-                    refinement program can already express — tier 2.
-                  </p>
-                  <p>
-                    <Tok net="pose_1">pose_1</Tok> + <Tok net="pose_2">pose_2</Tok> ={" "}
-                    <Tok net="bound">occupancy(bound)</Tok> is <C>complete</C> under a{" "}
-                    <C>refined</C> parent — tier 3, which no mainstream program fits today. Both
-                    pocket states are <C>compositional</C> (the ligand is there or it is not); both
-                    ligand poses are <C>conformational</C> (the same fragment, differently placed).
-                  </p>
-                </>
-              }
-              caption="A viewer that ignores the extra columns draws exactly what it drew before."
+              caption="PDB 5E1N, Arg74 and water 468. One forbidden pairing, no bundle, and no populations claimed."
             />
           </Section>
 
           <PartDivider part="V" title="Open problems" />
 
           <Section id="open">
+            <h3 className="pt-2 text-[15px] font-semibold text-slate-900">Does this blow up?</h3>
             <p>
-              <Ref to="locks">The cross-branch lock</Ref> moved the boundary from
-              &ldquo;inexpressible&rdquo; to &ldquo;expressible but not yet fitted&rdquo;. Two things
-              remain genuinely open.
+              Within a bundle, yes, in principle; across a structure, no. The cost of the state table
+              is exponential in the number of mutually correlated switches inside a{" "}
+              <em>single</em> bundle — independent sites are separate bundles,
+              and separate bundles add rather than multiply. A structure with several hundred partial
+              waters and alternate side chains that do not talk to each other is several hundred
+              bundles of one or two states apiece: linear in the number of partial sites, not two to
+              the power of anything.
+            </p>
+            <p>
+              A genuine blow-up therefore needs one bundle of fifteen or twenty mutually entangled
+              switches — and it seems impossible to refine, measure or otherwise determine a fifteen-way joint
+              distribution from one experiment. So i don't think this is a problem in pracitce.. Also something like BinaryCIF would compress away these quite repetitive table quite nicely.
+               What remains open is whether some class of
+              structure has a bundle much bigger than anything we have looked at.
             </p>
             <h3 className="pt-2 text-[15px] font-semibold text-slate-900">
-              Whether the hierarchy needs to be a graph
+              Where the joint actually comes from
             </h3>
             <p>
-              This proposal keeps a single-parent tree, and an earlier draft did not: it replaced{" "}
-              <It cat="pdbx_heterogeneity_hierarchy" field="parent_alt_groups_id" bare /> with an
-              edges table so a network could declare several parents. The case that motivated the
-              change was two coupled pockets, where a bottom-pocket occupant looked as though it
-              answered to both occupants of the pocket above it. On inspection it does not: it answers
-              to one of them, and to the other only through the first — which is a nesting, and{" "}
-              <Ref to="nesting">the tree carries it</Ref>. Every case on this page turned out the same
-              way, so the tree stays until a real second parent is produced. That is a claim about the
-              archive rather than about the format, and one deposited counterexample would overturn it.
-            </p>
-            <p>
-              Separately, how to spell a cross-branch tie is now settled in this draft: a typed
-              relationship over network names, <C>equal</C> or <C>sum_to</C>. An earlier sketch wrote
-              ties as linear equations with a coefficient per term, which is strictly more general —
-              it can express a weighted sum such as 2·O(X) = O(Y). No structure has been produced that
-              needs one, and the coefficients cost every reader an equation to decode, so they are
-              gone. If such a case appears, this is the seam it reopens.
-            </p>
-            <h3 className="pt-2 text-[15px] font-semibold text-slate-900">The product wall</h3>
-            <p>
-              Every relationship this proposal can hold is <em>linear</em> — a sum of occupancies, or
-              an equality between two. Genuine statistical independence is <em>multiplicative</em>,
-              and lies outside it. Take two independent fragments and a water that is ordered only
-              when <em>both</em> are bound: its occupancy is a product, and no sum of group
-              occupancies equals a product. The only way to stay linear is to enumerate the joint
-              species, which is exponential and does not even preserve the independence it is faking.
-            </p>
-            <SumVsProduct />
-            <p>
-              So the frontier past this proposal is not the shape of the hierarchy. It is the mixture
-              of exclusive (linear) and independent (multiplicative) couplings in one system, which no
-              format currently under discussion expresses without either exponential blow-up or a
-              constraint language none of them has. Alongside it sit smaller open items: relations no
-              program yet consumes, the ragged alternates that refinement still works around with
-              phantom residues, and higher-arity exclusions that a pairwise <C>NOT</C> cannot state.
+              The schema holds any joint distribution perfectly. The data, in general, do not. The
+              average density is a one-body quantity: at each site it carries that site&rsquo;s
+              marginal occupancy and nothing more. The joint — which bottom-pocket occupant goes with
+              which top-pocket occupant — is a correlation between sites, a many-body quantity, and
+              standard refinement against Bragg data does not produce it afaik, let alone CryoEM data. Two crystals with the same
+              marginals and completely different correlations give the same average density (see the section about marginals).
             </p>
           </Section>
 
           {/* ------------------------------------------------------------------ appendix */}
-          <Section id="examples" title="Appendix — the examples">
-            <p>
-              Each figure above is a local site carved out of a deposited entry. Coordinates are
-              copied verbatim from the archive; nothing is idealised or adjusted. What is added is
-              the proposed annotation, which by definition does not exist in the archive yet.
-              Hydrogens are omitted except where they are the point. The file-by-file glossary is in
-              the contents rail, so it can be consulted while reading rather than only at the end.
-            </p>
-            <p className="text-[13px] text-slate-500">
-              The files are regenerated by <C>heterogeneity-proposal/scripts/carve_examples.py</C>,
-              and <C>check_examples.py</C> re-measures them and asserts every geometric claim this
-              page makes — that the calcium–oxygen distances are 2.0–2.7 Å, that the two ligand poses
-              genuinely overlap, that 0.13 + 0.09 = 0.22, and that nothing interpenetrates.
-            </p>
-          </Section>
 
           <footer className="border-t border-slate-100 pt-8 text-[13px] leading-relaxed text-slate-500">
             <p>
@@ -1301,8 +1087,19 @@ function Escalator() {
           all — nothing for a per-atom mechanism to label.
         </>
       ),
-      to: "nesting",
+      to: "states",
       where: "7HHS_apo_bound",
+    },
+    {
+      text: (
+        <>
+          Two adjacent pockets whose fillings depend on each other. Four occupancies are deposited,
+          and they are the same four whether the pockets are correlated, anti-correlated or
+          independent — three different pieces of chemistry, one file.
+        </>
+      ),
+      to: "states",
+      where: "constructed_two_pocket",
     },
     {
       text: (
@@ -1318,23 +1115,14 @@ function Escalator() {
     {
       text: (
         <>
-          Two sites in different chains held to the <em>same</em> occupancy — two NCS copies of a
-          partial ligand, refined together. Neither contains the other, so no nesting can say it.
-        </>
-      ),
-      to: "locks",
-      where: "constructed_ncs_lock",
-    },
-    {
-      text: (
-        <>
           Two independent fragments and a water ordered only when <em>both</em> are bound. Its
-          occupancy is a <em>product</em> of theirs, not a sum — and no weighted sum of occupancies
-          equals a product. <em>This one is not solved here, or anywhere else yet.</em>
+          occupancy is a <em>product</em> of theirs, and no sum of occupancies equals a product.{" "}
+          <em>Expressible</em>, by writing the four combinations out — what it costs is that the two
+          fragments must then share a bundle, so their independence is implied rather than stated.
         </>
       ),
       to: "open",
-      where: "the product wall",
+      where: "the price of enumerating",
     },
   ];
   return (
@@ -1397,74 +1185,69 @@ function CategoryReference() {
     },
     {
       name: "pdbx_heterogeneity_hierarchy",
-      role: "the tree, and the occupancy grouping",
+      role: "which networks exclude one another",
       desc: (
         <>
-          One row per network. It gives the network its parent (<C>.</C> for a root directly under
-          the implicit <C>base</C>) and the coexistence group it shares with its siblings — the
-          mutually-exclusive set, which is what a crystallographer calls an occupancy group. The four
-          trailing columns are the{" "}
-          <Ref to="occupancy">occupancy specification</Ref>, and are absent from a file that does not
-          record it.
+          One row per network, naming the coexistence group it shares with its alternatives — the
+          mutually-exclusive set, which is what a crystallographer calls an occupancy group. At most
+          one member of a group is present in any copy, so their occupancies sum to at most 1; a sum
+          below 1 leaves a fraction of copies with none of them. It says nothing about networks at{" "}
+          <em>different</em> sites — that is the joint, and it lives in the next category.
         </>
       ),
       cols: [
         { field: "alt_group_id" },
         { field: "coexistence_group_id", optional: true },
-        { field: "parent_alt_groups_id", optional: true },
-        { field: "occupancy_completeness", optional: true },
-        { field: "occupancy_refine_flag", optional: true },
-        { field: "occupancy_value", optional: true },
         { field: "state_kind", optional: true },
       ],
     },
     {
+      name: "pdbx_het_state",
+      role: "the joint — combinations that occur, and how often",
+      desc: (
+        <>
+          One row per combination that actually occurs. Its{" "}
+          <It cat="pdbx_het_state" field="occupancy" bare /> is the <em>joint</em> occupancy of the
+          whole combination — a network&rsquo;s own occupancy, the number{" "}
+          <Cat name="atom_site" /> carries, is the sum over every state containing it. The networks
+          present are listed in the child table, one per row, because an mmCIF cell holds a single
+          value. <It cat="pdbx_het_state" field="bundle_id" bare /> is the unit of correlation:
+          states sharing one enumerate a joint distribution and sum to 1, and networks in different
+          bundles are independent.
+        </>
+      ),
+      cols: [
+        { field: "id" },
+        { field: "bundle_id" },
+        { field: "occupancy" },
+        { field: "provenance", optional: true },
+        { field: "details", optional: true },
+      ],
+      child: {
+        name: "pdbx_het_state_members",
+        cols: [{ field: "state_id" }, { field: "alt_group_id" }],
+      },
+    },
+    {
       name: "pdbx_state_coexistence",
-      role: "exclusions the tree does not already imply",
+      role: "a combination that cannot occur",
       optional: true,
       desc: (
         <>
-          A sparse <C>NOT</C>-only list. Each row says two networks may not co-occur. Needed only for
-          a cross-branch clash, since mutual exclusion within a coexistence group — and its
-          inheritance by descendants — already covers the common cases. <C>AND</C> and <C>OR</C> were
-          deliberately left out: they admit several readings. Absent from most files; there is
+          A sparse <C>NOT</C>-only list: each row says two networks may not co-occur. For a zero in
+          the joint where there is no distribution to write — two networks that are otherwise
+          independent, no populations known, one impossible pairing. Not needed inside a coexistence
+          group, whose members already exclude each other, and not needed inside a bundle, which
+          already forbids by omission everything it does not list. Absent from most files; there is
           exactly one such row in the prototype annotation of 5E1N.
         </>
       ),
       cols: [
         { field: "id" },
         { field: "rule" },
-        { field: "heterogeneity_id" },
-        { field: "heterogeneity_ids" },
+        { field: "alt_group_id" },
+        { field: "alt_group_ids" },
       ],
-    },
-    {
-      name: "pdbx_occupancy_relationship",
-      role: "an occupancy tie no parent link can imply",
-      optional: true,
-      desc: (
-        <>
-          The escape hatch, for a tie between two networks that no parent relates — one in each of
-          two branches, held to the same occupancy. A head row names the tie&rsquo;s{" "}
-          <It cat="pdbx_occupancy_relationship" field="type" bare /> and its target; the child member
-          table supplies the other side, one network per row, so no field has to hold a list. There
-          is no arithmetic in either: a tie is a set of members and a target. Absent from ordinary
-          files, because a parent link plus{" "}
-          <It cat="pdbx_heterogeneity_hierarchy" field="occupancy_completeness" bare /> already
-          carries every tie that runs between a network and its own parent.
-        </>
-      ),
-      cols: [
-        { field: "id" },
-        { field: "type" },
-        { field: "target" },
-        { field: "enforced" },
-        { field: "details", optional: true },
-      ],
-      child: {
-        name: "pdbx_occupancy_relationship_member",
-        cols: [{ field: "relationship_id" }, { field: "state_id" }],
-      },
     },
   ];
   return (
@@ -1499,11 +1282,11 @@ function CategoryReference() {
           </div>
         ))}
       </dl>
-      <p className="mt-2 text-[11.5px] text-slate-400">
+      {/* <p className="mt-2 text-[11.5px] text-slate-400">
         Hover any name for its dictionary definition — description, type, and the values it may take.
         Mandatory columns are set in <span className="font-semibold text-slate-700">dark</span>;{" "}
         <span className="text-slate-400">grey</span> ones are optional and may be omitted or written
-        as <C>.</C> — an arrow marks a column that points at another category&rsquo;s. The four names
+        as <C>.</C> — an arrow marks a column that points at another category&rsquo;s. The five names
         above are the proposal; every <em>other</em> mmCIF name on this page already exists, and
         links to its published definition in the{" "}
         <a
@@ -1515,7 +1298,7 @@ function CategoryReference() {
           wwPDB dictionary
         </a>
         . If a name is not a link, this page is asking for it.
-      </p>
+      </p> */}
     </div>
   );
 }
@@ -1553,101 +1336,6 @@ function ColumnList({ cat, cols }: { cat: string; cols: { field: string; optiona
   );
 }
 
-// What is lost at deposition: two files that differ in nothing a reader can see.
-function OccupancySpec() {
-  return (
-    <div className="my-4 grid gap-5 border-y border-slate-100 py-4 sm:grid-cols-2">
-      {[
-        {
-          tag: "constrained",
-          note: "The refinement was told the two alternates are complementary. The occupancies could not have come out any other way.",
-        },
-        {
-          tag: "coincidental",
-          note: "The two occupancies were refined freely and happen to land on 1.00. Nothing ties them.",
-        },
-      ].map((c) => (
-        <div key={c.tag}>
-          <div className="mb-2 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
-            {c.tag}
-          </div>
-          <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-600">
-            <div>A 0.67</div>
-            <div>B 0.33</div>
-          </div>
-          <p className="mt-2 text-[12px] leading-relaxed text-slate-500">{c.note}</p>
-        </div>
-      ))}
-      <p className="text-[12.5px] leading-relaxed text-slate-500 sm:col-span-2">
-        The deposited file is identical in both cases. The distinction lived in the refinement
-        program&rsquo;s keyword file, and deposition discards it.
-      </p>
-    </div>
-  );
-}
-
-// The two tie types, side by side with what each one reads as. The point of the table is that the
-// file never contains an equation: a tie is a set of member names and a target name, and the type
-// says how to read the pair.
-function RelationshipTypes() {
-  const types: { name: string; shape: ReactNode; reads: ReactNode }[] = [
-    {
-      name: "equal",
-      shape: <>one member · one target</>,
-      reads: (
-        <>
-          The member&rsquo;s occupancy is the target&rsquo;s. The cross-branch lock — two NCS copies
-          refined together, two sites a depositor holds level.
-        </>
-      ),
-    },
-    {
-      name: "sum_to",
-      shape: <>several members · one target</>,
-      reads: (
-        <>
-          The members&rsquo; occupancies add up to the target&rsquo;s. Only for a sum whose target is
-          <em> not</em> the members&rsquo; parent — when it is, the parent link already says it and
-          this row would be redundant.
-        </>
-      ),
-    },
-  ];
-  return (
-    <div className="my-4 divide-y divide-slate-100 border-y border-slate-100">
-      {types.map((t) => (
-        <div key={t.name} className="flex flex-wrap gap-x-4 gap-y-1 py-2.5">
-          <div className="w-[9rem] shrink-0">
-            <div className="font-mono text-[12px] font-semibold text-slate-700">{t.name}</div>
-            <div className="text-[10.5px] text-slate-400">{t.shape}</div>
-          </div>
-          <p className="max-w-[70ch] flex-1 text-[13px] leading-relaxed text-slate-600">{t.reads}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function TierTable() {
-  const tiers: [string, string][] = [
-    ["ignore", "Knows none of the categories; reads the same _atom_site and refines as it does today. Nothing breaks."],
-    ["flat", "Each coexistence group is one occupancy group summing to a constant parent — exactly what Refmac, Phenix, SHELXL and BUSTER already do. No new code."],
-    ["nested", "Tie a child sum to a refinable parent, lock two branches, or state a graph equation. No mainstream program does this yet; it is recorded so a pipeline can grow into it."],
-  ];
-  return (
-    <div className="my-4 divide-y divide-slate-100 border-y border-slate-100">
-      {tiers.map(([name, desc], i) => (
-        <div key={name} className="flex gap-4 py-2.5">
-          <div className="w-16 shrink-0">
-            <div className="font-mono text-[11px] text-slate-400">tier {i + 1}</div>
-            <div className="text-[12px] font-semibold text-slate-700">{name}</div>
-          </div>
-          <p className="text-[13px] leading-relaxed text-slate-600">{desc}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 // The Part I figure. The occupants are deliberately unnamed: the two-pocket case and its real names
 // arrive in Part IV, and borrowing them here would be nomenclature the reader has not met.
@@ -1727,40 +1415,50 @@ function JointMatrix({ tag, m }: { tag: string; m: number[][] }) {
   );
 }
 
+// The product case, written out. Two independent fragments at 0.5 and 0.6, and a water ordered only
+// when both are bound: O(W) = 0.5 x 0.6 = 0.30, which no sum of the two marginals reaches. As a
+// state table it is four rows and needs no arithmetic at all — which is the argument for
+// enumerating rather than for a constraint language.
 function SumVsProduct() {
-  const attempts: [string, string][] = [
-    ["f1 + f2", "0.5 + 0.6 = 1.10"],
-    ["f2 − f1", "0.6 − 0.5 = 0.10"],
-    ["½(f1 + f2)", "= 0.55"],
-    ["a·f1 + b·f2 + c", "no fixed a, b, c works"],
+  const states: [string, string][] = [
+    ["f1 + f2 + W", "0.30"],
+    ["f1", "0.20"],
+    ["f2", "0.30"],
+    ["(neither)", "0.20"],
   ];
   return (
     <div className="my-4 grid gap-6 border-y border-slate-100 py-4 sm:grid-cols-2">
       <div>
         <div className="mb-2 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
-          linear — expressible
+          as a relation between occupancies — impossible
         </div>
-        <div className="font-mono text-[12px] text-slate-700">O(edo_B) = O(edo_A)</div>
-        <div className="mt-0.5 font-mono text-[11px] text-slate-500">0.40 = 0.40</div>
+        <div className="font-mono text-[12px] text-slate-700">
+          O(W) = O(f1) × O(f2) = 0.5 × 0.6 = 0.30
+        </div>
         <p className="mt-2 text-[12.5px] leading-relaxed text-slate-600">
-          A sum or an equality between occupancies. One{" "}
-          <span className="font-mono">equal</span> row holds it. This is{" "}
-          <Ref to="locks">the cross-branch lock</Ref>.
+          A product, not a sum. No weighted sum of the two fragment occupancies reaches 0.30, so no
+          arithmetic relation between occupancies can state it — which is what every earlier draft
+          of this proposal tried to write.
         </p>
       </div>
       <div>
         <div className="mb-2 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
-          product — out of reach
+          as states — exact, in four rows
         </div>
-        <div className="font-mono text-[12px] text-slate-700">O(W) = O(f1) × O(f2) = 0.5 × 0.6 = 0.30</div>
-        <p className="mt-2 text-[12px] text-slate-500">No sum of the two marginals reaches 0.30:</p>
-        <div className="mt-1 space-y-0.5 font-mono text-[11px] text-slate-400">
-          {attempts.map(([a, b]) => (
-            <div key={a}>
-              <span className="text-slate-600">{a}</span> {b}
+        <div className="space-y-0.5 font-mono text-[11px] text-slate-500">
+          {states.map(([nets, p]) => (
+            <div key={nets}>
+              <span className="inline-block w-24 text-slate-700">{p}</span>
+              {nets}
             </div>
           ))}
         </div>
+        <p className="mt-2 text-[12.5px] leading-relaxed text-slate-600">
+          The product is now one of the numbers rather than a rule to be satisfied, so nothing has
+          to be able to express multiplication. Note what the table does <em>not</em> say out loud:
+          0.30 × 0.20 : 0.30 × 0.20 is a product structure, and a reader only learns the two
+          fragments are independent by multiplying and checking.
+        </p>
       </div>
     </div>
   );
@@ -1795,32 +1493,17 @@ function ExampleGlossary() {
     {
       file: "7HHS_apo_bound",
       site: "7HHS · pocket + ligand A1A7O",
-      shows: "Apo 0.78 / bound 0.22, with two exclusive poses at 0.13 and 0.09. Nested occupancy, in deposited numbers.",
-    },
-    {
-      file: "7HHS_apo_bound_occ",
-      site: "7HHS · as above",
-      shows: "The same, carrying the occupancy specification columns.",
+      shows: "Three states in one bundle, in deposited numbers: apo 0.78, bound + pose_1 0.13, bound + pose_2 0.09.",
     },
     {
       file: "5E1N_arg74_clash",
       site: "5E1N · Arg74, water 468",
-      shows: "The one real NOT: a 2.14 Å cross-branch clash the tree cannot imply.",
-    },
-    {
-      file: "constructed_two_pocket_flat",
-      site: "constructed · 1EJG peptide",
-      shows: "The wrong parent: both pockets on base, so the state list admits pairs the occupancies forbid.",
+      shows: "The one real NOT: a 2.14 Å clash between networks that are otherwise independent, with no populations to record.",
     },
     {
       file: "constructed_two_pocket",
       site: "constructed · 1EJG peptide",
-      shows: "The same atoms with the bottom pocket nested under EDO1, where the coupling follows from the tree.",
-    },
-    {
-      file: "constructed_ncs_lock",
-      site: "constructed · two 1EJG copies",
-      shows: "The cross-branch lock: two NCS copies at one occupancy, which no parent link can state.",
+      shows: "Six states in one bundle. The four marginals are what a file carries today; the six joint numbers are what they cannot decide.",
     },
   ];
   return (

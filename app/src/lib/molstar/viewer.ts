@@ -34,7 +34,9 @@ import { AltLocColorThemeProvider } from "./altloc-theme";
 import { LabelManager } from "./labels";
 import {
   type AltGroupSelector,
+  type BondEnd,
   buildAltGroupExpression,
+  buildBondAtomsExpression,
   buildTlsGroupExpression,
   executeQuery,
 } from "./queries";
@@ -391,6 +393,28 @@ export class MolstarViewer {
 
   focusNetwork(id: string): void {
     const loci = this.hetLoci(id);
+    if (loci) this.focusLoci(loci);
+  }
+
+  // --- struct_conn bonds ---
+  //
+  // A bond is drawn by Mol* itself (it reads _struct_conn and renders metal coordination dashed),
+  // so there is no geometry to add here — only the two ends to point at. Both helpers resolve
+  // exactly the two named atoms, altloc included, so highlighting a bond of Thr26's carbonyl in
+  // alternate B does not light up the same oxygen in A, C and D.
+
+  private bondLoci(a: BondEnd, b: BondEnd): StructureElement.Loci | null {
+    const struct = this.getCurrentStructure();
+    if (!struct) return null;
+    return executeQuery(buildBondAtomsExpression(a, b), struct);
+  }
+
+  highlightBond(ends: { a: BondEnd; b: BondEnd } | null): void {
+    this.highlightLoci(ends ? this.bondLoci(ends.a, ends.b) : null);
+  }
+
+  focusBond(a: BondEnd, b: BondEnd): void {
+    const loci = this.bondLoci(a, b);
     if (loci) this.focusLoci(loci);
   }
 
